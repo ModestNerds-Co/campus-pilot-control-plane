@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://campuspilot.app/contracts/license-lease-v1.schema.json",
+  "title": "Campus Pilot signed entitlement lease v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "iss",
+    "aud",
+    "sub",
+    "installation_id",
+    "jti",
+    "sequence",
+    "catalog_version",
+    "iat",
+    "nbf",
+    "refresh_after",
+    "lease_expires_at",
+    "grace_until",
+    "exp",
+    "modules",
+    "features",
+    "limits"
+  ],
+  "properties": {
+    "contract_version": { "const": "cp-license/v1" },
+    "iss": { "type": "string", "minLength": 1 },
+    "aud": { "type": "string", "minLength": 1 },
+    "sub": { "type": "string", "format": "uuid" },
+    "installation_id": { "type": "string", "format": "uuid" },
+    "jti": { "type": "string", "format": "uuid" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "catalog_version": { "type": "string", "minLength": 1 },
+    "iat": { "type": "integer", "minimum": 0 },
+    "nbf": { "type": "integer", "minimum": 0 },
+    "refresh_after": { "type": "integer", "minimum": 0 },
+    "lease_expires_at": { "type": "integer", "minimum": 0 },
+    "grace_until": { "type": "integer", "minimum": 0 },
+    "exp": { "type": "integer", "minimum": 0 },
+    "modules": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+    },
+    "features": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_.]*$" }
+    },
+    "limits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "unit", "period", "value", "enforcement"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z][a-z0-9_.]*$" },
+          "unit": { "type": "string", "minLength": 1 },
+          "period": { "enum": ["none", "day", "month", "year"] },
+          "value": { "type": "integer", "minimum": 0 },
+          "enforcement": { "enum": ["report", "hard"] }
+        }
+      }
+    },
+    "min_app_version": { "type": ["string", "null"] },
+    "max_app_version": { "type": ["string", "null"] }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "campus-pilot-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "dev": "pnpm build:client && pnpm worker:tool && wrangler dev",
+    "build:client": "tsc -b tsconfig.app.json tsconfig.node.json && vite build",
+    "worker:tool": "cargo install -q --locked worker-build --version 0.8.5",
+    "build:worker": "pnpm worker:tool && worker-build --release --no-panic-recovery",
+    "build": "pnpm build:client && pnpm build:worker",
+    "preview": "vite preview",
+    "typecheck": "tsc -b tsconfig.app.json tsconfig.node.json --pretty false",
+    "test": "vitest --config vitest.config.ts run",
+    "test:rust": "cargo test --all-targets",
+    "verify:rust": "cargo fmt --all -- --check && cargo check --all-targets && cargo clippy --all-targets -- -D warnings && cargo test --all-targets",
+    "verify": "pnpm typecheck && pnpm test && pnpm verify:rust && pnpm build",
+    "deploy": "pnpm build:client && pnpm worker:tool && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply campus-pilot-control-plane --local",
+    "db:migrate:remote": "wrangler d1 migrations apply campus-pilot-control-plane --remote",
+    "cf:types": "wrangler types"
+  },
+  "dependencies": {
+    "lucide-react": "^1.34.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.127.0"
+  }
+}

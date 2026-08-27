@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "campus-pilot-control-plane",
+  "main": "./build/index.js",
+  "compatibility_date": "2026-08-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "build": {
+    "command": "worker-build --release --no-panic-recovery"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "campus-pilot-control-plane",
+      "database_id": "REPLACE_AFTER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "PUBLIC_APP_URL": "http://localhost:8787",
+    "LICENSE_ISSUER": "campus-pilot-control-plane",
+    "LICENSE_AUDIENCE": "campus-pilot",
+    "LICENSE_SIGNING_KEY_ID": "development-1",
+    "LEASE_ACTIVE_DAYS": "30",
+    "LEASE_GRACE_DAYS": "7",
+    "MAGIC_LINK_MINUTES": "15",
+    "SESSION_DAYS": "7",
+    "OWNER_EMAILS": ""
+  },
+  "observability": {
+    "enabled": true
+  }
+}
