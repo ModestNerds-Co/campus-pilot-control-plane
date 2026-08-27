@@ -834,6 +834,9 @@ fn validate_plan_patch(patch: &PlanPatch) -> Result<(), ApiError> {
             return Err(invalid(field, "One or more keys are invalid"));
         }
     }
+    if let Some(modules) = &patch.modules {
+        validate_module_dependencies(modules)?;
+    }
     if patch
         .limits
         .as_ref()
@@ -846,6 +849,25 @@ fn validate_plan_patch(patch: &PlanPatch) -> Result<(), ApiError> {
         .is_some_and(|value| !(0..=365).contains(&value))
     {
         return Err(invalid("trial_days", "Expected 0 to 365 days"));
+    }
+    Ok(())
+}
+
+fn validate_module_dependencies(modules: &[String]) -> Result<(), ApiError> {
+    let modules = modules.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    for (module, dependency) in [
+        ("academics", "hr_payroll"),
+        ("fleet", "hr_payroll"),
+        ("timetabling", "academics"),
+    ] {
+        if modules.contains(module) && !modules.contains(dependency) {
+            return Err(ApiError::Validation {
+                issues: vec![FieldIssue {
+                    field: "modules",
+                    detail: format!("{module} requires {dependency}"),
+                }],
+            });
+        }
     }
     Ok(())
 }
@@ -945,6 +967,19 @@ mod tests {
         assert!(validate_plan_patch(&patch).is_err());
         patch.status = Some("active".to_owned());
         patch.trial_days = Some(366);
+        assert!(validate_plan_patch(&patch).is_err());
+    }
+
+    #[test]
+    fn plan_patch_requires_runtime_module_dependencies() {
+        let mut patch = empty_patch();
+        patch.modules = Some(vec!["academics".to_owned()]);
+        assert!(validate_plan_patch(&patch).is_err());
+
+        patch.modules = Some(vec!["academics".to_owned(), "hr_payroll".to_owned()]);
+        assert!(validate_plan_patch(&patch).is_ok());
+
+        patch.modules = Some(vec!["timetabling".to_owned(), "academics".to_owned()]);
         assert!(validate_plan_patch(&patch).is_err());
     }
 
