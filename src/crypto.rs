@@ -2,8 +2,8 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use ed25519_dalek::pkcs8::DecodePrivateKey;
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::pkcs8::{DecodePrivateKey, DecodePublicKey};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -58,6 +58,23 @@ pub fn sign_jws<T: serde::Serialize>(
     ))
 }
 
+pub fn validate_public_signing_key(public_key_pem: &str) -> Result<(), ApiError> {
+    VerifyingKey::from_public_key_pem(&normalize_pem(public_key_pem))
+        .map(|_| ())
+        .map_err(|_| ApiError::Configuration)
+}
+
+pub fn signing_key_pair_matches(
+    private_key_pem: &str,
+    public_key_pem: &str,
+) -> Result<bool, ApiError> {
+    let signing_key = SigningKey::from_pkcs8_pem(&normalize_pem(private_key_pem))
+        .map_err(|_| ApiError::Configuration)?;
+    let verifying_key = VerifyingKey::from_public_key_pem(&normalize_pem(public_key_pem))
+        .map_err(|_| ApiError::Configuration)?;
+    Ok(signing_key.verifying_key() == verifying_key)
+}
+
 #[must_use]
 pub fn normalize_pem(value: &str) -> String {
     value.replace("\\n", "\n").trim().to_owned()
@@ -75,7 +92,14 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{constant_time_equal, hash_secret, hmac_sha256_hex, normalize_pem};
+    use super::{
+        constant_time_equal, hash_secret, hmac_sha256_hex, normalize_pem, signing_key_pair_matches,
+        validate_public_signing_key,
+    };
+
+    const PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIL9PtNqTMRWH3/0tsQRAHSoduxipswZZSjKkMtpWweJd\n-----END PRIVATE KEY-----\n";
+    const PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAxbbyLLpJQoSoH8ia0Xw/lZTAUKtokEiy8l27VZND2zI=\n-----END PUBLIC KEY-----\n";
+    const OTHER_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEArVSef1/+8dsF8OsxRrBs6q6+hRI7leppr00NTz3n2NA=\n-----END PUBLIC KEY-----\n";
 
     #[test]
     fn hashes_are_stable_and_pepper_scoped() {
@@ -102,5 +126,15 @@ mod tests {
         assert!(constant_time_equal("same", "same"));
         assert!(!constant_time_equal("same", "different"));
         assert_eq!(normalize_pem("a\\nb\n"), "a\nb");
+    }
+
+    #[test]
+    fn signing_key_material_is_parsed_and_pair_matched() {
+        assert!(validate_public_signing_key(PUBLIC_KEY).is_ok());
+        assert!(validate_public_signing_key("not-a-key").is_err());
+        assert!(signing_key_pair_matches(PRIVATE_KEY, PUBLIC_KEY).is_ok_and(|matches| matches));
+        assert!(
+            signing_key_pair_matches(PRIVATE_KEY, OTHER_PUBLIC_KEY).is_ok_and(|matches| !matches)
+        );
     }
 }

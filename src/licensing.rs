@@ -379,16 +379,18 @@ pub async fn issue(
 
 pub fn public_keys(config: &Config) -> serde_json::Value {
     let keys = config
-        .signing_public_key
-        .as_ref()
-        .map_or_else(Vec::new, |pem| {
-            vec![json!({
-                "kid": config.signing_key_id,
+        .signing_public_keys
+        .iter()
+        .map(|(key_id, pem)| {
+            json!({
+                "kid": key_id,
                 "alg": "EdDSA",
                 "use": "sig",
                 "pem": normalize_pem(pem),
-            })]
-        });
+                "current": key_id == &config.signing_key_id,
+            })
+        })
+        .collect::<Vec<_>>();
     json!({ "keys": keys })
 }
 
@@ -424,7 +426,11 @@ async fn current_entitlement(
 }
 
 fn require_signing(config: &Config) -> Result<(), ApiError> {
-    if config.signing_private_key.is_some() && !config.signing_key_id.is_empty() {
+    if config.signing_private_key.is_some()
+        && config
+            .signing_public_keys
+            .contains_key(&config.signing_key_id)
+    {
         Ok(())
     } else {
         Err(ApiError::client(
@@ -437,7 +443,40 @@ fn require_signing(config: &Config) -> Result<(), ApiError> {
 
 #[cfg(test)]
 mod tests {
-    use super::ActivationRequest;
+    use std::collections::BTreeMap;
+
+    use crate::config::Config;
+
+    use super::{ActivationRequest, public_keys, require_signing};
+
+    const PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAxbbyLLpJQoSoH8ia0Xw/lZTAUKtokEiy8l27VZND2zI=\n-----END PUBLIC KEY-----\n";
+    const ROTATED_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEArVSef1/+8dsF8OsxRrBs6q6+hRI7leppr00NTz3n2NA=\n-----END PUBLIC KEY-----\n";
+
+    fn config() -> Config {
+        Config {
+            environment: "test".to_owned(),
+            customer_app_url: "https://customer.example.test".to_owned(),
+            owner_app_url: "https://owner.example.test".to_owned(),
+            owner_emails: Default::default(),
+            license_issuer: "campus-pilot-control-plane".to_owned(),
+            license_audience: "campus-pilot".to_owned(),
+            signing_key_id: "production-2".to_owned(),
+            signing_private_key: Some("configured-in-secret-store".to_owned()),
+            signing_public_keys: BTreeMap::from([
+                ("production-1".to_owned(), PUBLIC_KEY.to_owned()),
+                ("production-2".to_owned(), ROTATED_PUBLIC_KEY.to_owned()),
+            ]),
+            lease_active_days: 30,
+            lease_grace_days: 7,
+            magic_link_minutes: 15,
+            session_days: 7,
+            session_pepper: None,
+            rerout_api_key: None,
+            stripe_secret_key: None,
+            stripe_webhook_secret: None,
+            auth_from_email: None,
+        }
+    }
 
     #[test]
     fn activation_request_parses_all_boundary_values() {
@@ -448,5 +487,29 @@ mod tests {
             "Main campus",
         );
         assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn public_keyring_identifies_one_current_key_and_signing_requires_it() {
+        let mut config = config();
+        let document = public_keys(&config);
+        let keys = document["keys"]
+            .as_array()
+            .unwrap_or_else(|| unreachable!());
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0]["kid"], "production-1");
+        assert_eq!(keys[0]["current"], false);
+        assert_eq!(keys[1]["kid"], "production-2");
+        assert_eq!(keys[1]["current"], true);
+        assert_eq!(keys[1]["alg"], "EdDSA");
+        assert!(require_signing(&config).is_ok());
+
+        config.signing_public_keys.remove("production-2");
+        assert!(require_signing(&config).is_err());
+        config
+            .signing_public_keys
+            .insert("production-2".to_owned(), ROTATED_PUBLIC_KEY.to_owned());
+        config.signing_private_key = None;
+        assert!(require_signing(&config).is_err());
     }
 }

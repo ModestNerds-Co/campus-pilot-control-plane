@@ -26,6 +26,8 @@ Create `.dev.vars` without committing it:
 ```dotenv
 LICENSE_SIGNING_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 LICENSE_SIGNING_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+# Optional during rotation; maps previous key IDs to public PEM values.
+LICENSE_PREVIOUS_SIGNING_PUBLIC_KEYS_JSON='{"production-1":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"}'
 SESSION_PEPPER="replace-me"
 OWNER_EMAILS="owner@example.com"
 REROUT_API_KEY="rrk_..."
@@ -48,5 +50,15 @@ Local development returns a direct preview URL instead of sending email. Product
 6. Build and deploy with `pnpm deploy`.
 7. Put Cloudflare Access in front of `/owner/*` and `/api/owner/*` as defense in depth.
 8. Register `/api/webhooks/{provider}` for every configured adapter and test checkout, renewal, failure, cancellation, refund, activation, lease renewal, and revocation end to end.
+
+### Signing-key rotation
+
+1. Generate the next Ed25519 key pair and assign a new immutable `LICENSE_SIGNING_KEY_ID`.
+2. Add the next public key to every Campus Pilot trusted keyring while the old key remains active. Verify both key IDs against shared lease vectors.
+3. Change the control plane's active key ID, private key, and public key together. Put the previous public key in `LICENSE_PREVIOUS_SIGNING_PUBLIC_KEYS_JSON`; never retain its private key in application configuration.
+4. Confirm `/api/v1/keys` reports exactly one `current` key plus the intended previous keys, then exercise activation, online renewal, and offline import.
+5. Keep the previous public key published and trusted through the maximum old lease, offline, and grace deadline. Remove it only after issued-lease evidence shows no accepted lease can still require it.
+
+Campus authorization never fetches the key endpoint synchronously. Keyring changes are deployment configuration applied before the signer switch.
 
 Plans do not contain one global price. Add provider price mappings per currency in the owner portal. The core stores explicit currency exponents and integer minor units, and keeps original, settlement, fee, and exchange-rate evidence separate.
