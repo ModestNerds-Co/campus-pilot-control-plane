@@ -30,7 +30,13 @@ import {
   type ReactNode,
 } from "react";
 
-import { api, patch, post, type SessionResponse } from "./api";
+import {
+  api,
+  patch,
+  post,
+  type HealthResponse,
+  type SessionResponse,
+} from "./api";
 import { Drawer } from "./drawer";
 import { formatMoney, parseMajorAmount } from "./money";
 
@@ -166,6 +172,7 @@ interface PaymentEvent {
 }
 
 export function App() {
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [workspace, setWorkspace] = useState<Workspace>("customer");
@@ -174,8 +181,12 @@ export function App() {
   const refreshSession = useCallback(async () => {
     setLoading(true);
     try {
-      const next = await api<SessionResponse>("/api/session");
+      const [next, nextHealth] = await Promise.all([
+        api<SessionResponse>("/api/session"),
+        api<HealthResponse>("/api/health"),
+      ]);
       setSession(next);
+      setHealth(nextHealth);
       if (next.identity?.isOwner && next.identity.accounts.length === 0)
         setWorkspace("owner");
     } finally {
@@ -195,7 +206,13 @@ export function App() {
       />
     );
   if (!session?.authenticated || !session.identity)
-    return <SignIn onNotice={setNotice} notice={notice} />;
+    return (
+      <SignIn
+        emailReady={health?.email_ready === true}
+        onNotice={setNotice}
+        notice={notice}
+      />
+    );
   return (
     <PortalShell
       identity={session.identity}
@@ -216,9 +233,11 @@ export function App() {
 }
 
 function SignIn({
+  emailReady,
   notice,
   onNotice,
 }: {
+  emailReady: boolean;
   notice: string | null;
   onNotice: (value: string) => void;
 }) {
@@ -227,6 +246,7 @@ function SignIn({
   const [debugUrl, setDebugUrl] = useState<string | null>(null);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!emailReady) return;
     setPending(true);
     setDebugUrl(null);
     try {
@@ -258,18 +278,27 @@ function SignIn({
         <form className="login-form" onSubmit={submit}>
           <p className="eyebrow">Secure access</p>
           <h2>Sign in</h2>
-          <p className="muted">We’ll email you a short-lived sign-in link.</p>
+          <p className="muted">
+            {emailReady
+              ? "We’ll email you a short-lived sign-in link."
+              : "Sign-in email delivery is not configured."}
+          </p>
           <label>
             Email address
             <input
               autoComplete="email"
+              disabled={!emailReady}
               onChange={(event) => setEmail(event.target.value)}
               required
               type="email"
               value={email}
             />
           </label>
-          <button className="button primary" disabled={pending} type="submit">
+          <button
+            className="button primary"
+            disabled={pending || !emailReady}
+            type="submit"
+          >
             {pending ? (
               <>
                 <Loader2 className="spin" />

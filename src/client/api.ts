@@ -9,6 +9,15 @@ export interface SessionResponse {
   } | null;
 }
 
+export interface HealthResponse {
+  email_ready: boolean;
+  environment: string;
+  payments_ready: boolean;
+  service: string;
+  signing_ready: boolean;
+  status: string;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "same-origin",

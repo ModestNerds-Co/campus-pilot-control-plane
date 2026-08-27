@@ -16,21 +16,28 @@
     {
       "binding": "DB",
       "database_name": "campus-pilot-control-plane",
-      "database_id": "REPLACE_AFTER_D1_CREATE",
+      "database_id": "eae1779b-edef-4aa0-a318-1050066358ba",
       "migrations_dir": "migrations"
     }
   ],
   "vars": {
-    "ENVIRONMENT": "development",
-    "PUBLIC_APP_URL": "http://localhost:8787",
+    "ENVIRONMENT": "production",
+    "PUBLIC_APP_URL": "https://campus-pilot-control-plane.imngonii.workers.dev",
     "LICENSE_ISSUER": "campus-pilot-control-plane",
     "LICENSE_AUDIENCE": "campus-pilot",
-    "LICENSE_SIGNING_KEY_ID": "development-1",
+    "LICENSE_SIGNING_KEY_ID": "production-1",
     "LEASE_ACTIVE_DAYS": "30",
     "LEASE_GRACE_DAYS": "7",
     "MAGIC_LINK_MINUTES": "15",
-    "SESSION_DAYS": "7",
-    "OWNER_EMAILS": ""
+    "SESSION_DAYS": "7"
+  },
+  "secrets": {
+    "required": [
+      "LICENSE_SIGNING_PRIVATE_KEY",
+      "LICENSE_SIGNING_PUBLIC_KEY",
+      "SESSION_PEPPER",
+      "OWNER_EMAILS"
+    ]
   },
   "observability": {
     "enabled": true

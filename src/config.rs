@@ -29,7 +29,9 @@ pub struct Config {
 
 impl Config {
     pub fn from_env(env: &Env) -> Result<Self, ApiError> {
-        let owner_emails = variable(env, "OWNER_EMAILS", "")
+        let owner_emails = secret(env, "OWNER_EMAILS")
+            .or_else(|| optional_variable(env, "OWNER_EMAILS"))
+            .unwrap_or_default()
             .split(',')
             .filter_map(|value| CanonicalEmail::parse(value).ok())
             .collect();

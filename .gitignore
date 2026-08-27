@@ -8,6 +8,7 @@ dist/
 coverage/
 target/
 build/
+worker-configuration.d.ts
 output/
 .playwright-cli/
 *.log
