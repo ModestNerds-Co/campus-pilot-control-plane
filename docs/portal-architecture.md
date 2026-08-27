@@ -16,7 +16,7 @@ Campus Pilot licensing has two separate browser applications backed by one contr
 - Canonical host: configured by `OWNER_APP_URL`.
 - Public route: `/owner/login` for allowlisted owner email addresses.
 - Authenticated routes: `/owner/*` for customers, plans, provider configuration, payments, installations, leases, and vendor audit.
-- An owner may grant a named email customer-administrator membership for assisted onboarding. This is audited, creates no customer session, and never lets the owner impersonate that customer; the recipient must still prove email control through customer sign-in.
+- An owner may grant a named email customer-administrator membership for assisted onboarding. This is audited, creates no customer session, and never lets the owner impersonate that customer. Cloudflare Email Sending sends the recipient the customer login URL, but no token or session; the recipient must still request a magic link and prove email control through customer sign-in. Email delivery status is reported separately from the committed membership write so a delivery failure never disguises whether access exists.
 - Owner authentication uses its own magic links, session table, cookie, and CSRF boundary.
 - Customer sessions cannot authorize owner endpoints, even when the same email address exists in both identity stores.
 

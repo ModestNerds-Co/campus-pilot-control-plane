@@ -87,6 +87,16 @@ pub(crate) struct CustomerAdministratorGrantOutput {
     outcome: CustomerAdministratorGrantOutcome,
 }
 
+impl CustomerAdministratorGrantOutput {
+    pub(crate) fn email(&self) -> &CanonicalEmail {
+        &self.email
+    }
+
+    pub(crate) fn requires_access_email(&self) -> bool {
+        self.outcome != CustomerAdministratorGrantOutcome::AlreadyAdministrator
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct AccountStatusRow {
     status: String,
@@ -899,7 +909,12 @@ fn invalid(field: &'static str, detail: &'static str) -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use super::{GrantCustomerAdministratorInput, PlanPatch, slugify, validate_plan_patch};
+    use super::{
+        CustomerAdministratorGrantOutcome, CustomerAdministratorGrantOutput,
+        GrantCustomerAdministratorInput, PlanPatch, slugify, validate_plan_patch,
+    };
+    use crate::auth::AccountRole;
+    use crate::domain::CanonicalEmail;
 
     fn empty_patch() -> PlanPatch {
         PlanPatch {
@@ -945,5 +960,20 @@ mod tests {
             GrantCustomerAdministratorInput::parse("not-an-account", "person@example.com").is_err()
         );
         assert!(GrantCustomerAdministratorInput::parse(account_id, "not-an-email").is_err());
+    }
+
+    #[test]
+    fn idempotent_customer_grant_does_not_repeat_the_access_email() {
+        let email =
+            CanonicalEmail::parse("administrator@example.com").unwrap_or_else(|_| unreachable!());
+        let mut output = CustomerAdministratorGrantOutput {
+            member_id: "member-1".to_owned(),
+            email,
+            role: AccountRole::Admin,
+            outcome: CustomerAdministratorGrantOutcome::Created,
+        };
+        assert!(output.requires_access_email());
+        output.outcome = CustomerAdministratorGrantOutcome::AlreadyAdministrator;
+        assert!(!output.requires_access_email());
     }
 }

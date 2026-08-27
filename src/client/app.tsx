@@ -124,6 +124,11 @@ interface AccountMember {
   created_at: string;
 }
 
+interface CustomerAdministratorGrant {
+  access_email: "sent" | "failed" | "not_required";
+  outcome: "created" | "promoted" | "already_administrator";
+}
+
 interface Lease {
   id: string;
   sequence: number;
@@ -1150,6 +1155,7 @@ function OwnerPageView({ email, page }: { email: string; page: OwnerPage }) {
   >(null);
   const [selected, setSelected] = useState<any>(null);
   const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1207,6 +1213,9 @@ function OwnerPageView({ email, page }: { email: string; page: OwnerPage }) {
       {error ? (
         <ErrorBanner message={error} onDismiss={() => setError(null)} />
       ) : null}
+      {notice ? (
+        <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />
+      ) : null}
       {loading ? (
         <ListSkeleton />
       ) : (
@@ -1255,9 +1264,17 @@ function OwnerPageView({ email, page }: { email: string; page: OwnerPage }) {
         onClose={() => setDrawer(null)}
         onSubmit={async (email) =>
           runMutation(setPending, setError, async () => {
-            await post(`/api/owner/accounts/${selected.id}/administrators`, {
-              email,
-            });
+            const result = await post<CustomerAdministratorGrant>(
+              `/api/owner/accounts/${selected.id}/administrators`,
+              { email },
+            );
+            setNotice(
+              result.access_email === "sent"
+                ? `Access granted. Customer portal instructions were emailed to ${email}.`
+                : result.access_email === "failed"
+                  ? "Access was granted, but the email was not sent. Ask the recipient to open the customer portal and request a sign-in link."
+                  : "Customer administrator access already exists. No additional email was sent.",
+            );
             setDrawer(null);
             await load();
           })
@@ -1867,7 +1884,7 @@ function CustomerAccessDrawer({
           </p>
         ) : (
           <p className="help">
-            The recipient must request and use an emailed customer sign-in link before opening installations or creating an activation code.
+            We’ll email the customer portal address. The recipient requests a separate sign-in link there before opening installations or creating an activation code.
           </p>
         )}
       </div>
@@ -2436,6 +2453,23 @@ function ErrorBanner({
         <strong>Action could not be completed</strong>
         <p>{message}</p>
       </div>
+      <button aria-label="Dismiss" onClick={onDismiss} type="button">
+        ×
+      </button>
+    </div>
+  );
+}
+function NoticeBanner({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="notice-banner" role="status">
+      <Check />
+      <p>{message}</p>
       <button aria-label="Dismiss" onClick={onDismiss} type="button">
         ×
       </button>

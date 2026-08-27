@@ -8,7 +8,7 @@ use crate::auth::{
     AccountRole, SignupInput, consume_customer_magic_link, consume_owner_magic_link,
     consume_signup, customer_logout, customer_session, owner_logout, owner_session,
     request_customer_magic_link, request_owner_magic_link, request_signup, require_owner,
-    require_user,
+    require_user, send_customer_access_email,
 };
 use crate::config::Config;
 use crate::domain::{InstallationCredential, PaymentProviderKey};
@@ -22,10 +22,11 @@ use crate::licensing::{
     public_keys,
 };
 use crate::operations::{
-    CreateAccountInput, CreatePlanPriceInput, GrantCustomerAdministratorInput, PlanPatch,
-    create_account, create_activation_code, create_manual_subscription, create_plan_price,
-    grant_customer_administrator, owner_accounts, owner_audit, owner_installations, owner_leases,
-    owner_overview, owner_plans, revoke_installation, update_plan,
+    CreateAccountInput, CreatePlanPriceInput, CustomerAdministratorGrantOutput,
+    GrantCustomerAdministratorInput, PlanPatch, create_account, create_activation_code,
+    create_manual_subscription, create_plan_price, grant_customer_administrator, owner_accounts,
+    owner_audit, owner_installations, owner_leases, owner_overview, owner_plans,
+    revoke_installation, update_plan,
 };
 use crate::payments::{
     CheckoutRequest, create_billing_portal, create_checkout, owner_payment_activity,
@@ -97,6 +98,21 @@ struct CreateAccountBody {
 #[derive(Debug, Deserialize)]
 struct GrantCustomerAdministratorBody {
     email: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GrantCustomerAdministratorResponse {
+    #[serde(flatten)]
+    grant: CustomerAdministratorGrantOutput,
+    access_email: CustomerAccessEmailStatus,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CustomerAccessEmailStatus {
+    Sent,
+    Failed,
+    NotRequired,
 }
 
 #[derive(Debug, Deserialize)]
@@ -682,7 +698,36 @@ pub async fn owner_grant_customer_administrator(
             .ok_or_else(|| ApiError::client("account_not_found", "Customer not found", 404))?;
         let body = json_body::<GrantCustomerAdministratorBody>(&mut request).await?;
         let input = GrantCustomerAdministratorInput::parse(account_id, &body.email)?;
-        json_response(&grant_customer_administrator(&db, &operator, input, &id).await?)
+        let grant = grant_customer_administrator(&db, &operator, input, &id).await?;
+        let email_sender = context.env.send_email("EMAIL").ok();
+        let access_email = match (
+            grant.requires_access_email(),
+            email_sender.as_ref(),
+            config.auth_from_email.as_ref(),
+        ) {
+            (false, _, _) => CustomerAccessEmailStatus::NotRequired,
+            (true, Some(sender), Some(from)) => {
+                match send_customer_access_email(
+                    sender,
+                    from,
+                    grant.email(),
+                    &config.customer_app_url,
+                )
+                .await
+                {
+                    Ok(()) => CustomerAccessEmailStatus::Sent,
+                    Err(_) => {
+                        worker::console_error!("customer access email failed request_id={id}");
+                        CustomerAccessEmailStatus::Failed
+                    }
+                }
+            }
+            (true, _, _) => CustomerAccessEmailStatus::Failed,
+        };
+        json_response(&GrantCustomerAdministratorResponse {
+            grant,
+            access_email,
+        })
     }
     .await;
     finish(result, &id)

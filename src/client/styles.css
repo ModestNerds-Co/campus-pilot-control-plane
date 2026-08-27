@@ -115,6 +115,10 @@ td small { max-width: 280px; margin-top: 3px; overflow: hidden; color: var(--sub
 .error-banner strong { font-size: 13px; }
 .error-banner p { margin: 3px 0 0; font-size: 12px; }
 .error-banner button { margin-left: auto; border: 0; cursor: pointer; color: inherit; background: none; font-size: 20px; }
+.notice-banner { display: flex; align-items: center; gap: 10px; margin-top: 20px; padding: 13px 15px; border: 1px solid color-mix(in srgb, var(--success) 28%, var(--border)); border-radius: 9px; color: var(--success); background: var(--success-bg); }
+.notice-banner > svg { flex: 0 0 auto; width: 18px; height: 18px; }
+.notice-banner p { margin: 0; color: inherit; font-size: 12px; line-height: 1.5; }
+.notice-banner button { margin-left: auto; border: 0; cursor: pointer; color: inherit; background: none; font-size: 20px; }
 .skeleton-list { display: grid; gap: 14px; margin-top: 28px; }
 .skeleton-list div { height: 100px; border-radius: 10px; background: linear-gradient(90deg, #e9eef3, #f5f7f9, #e9eef3); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
 

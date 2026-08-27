@@ -805,6 +805,7 @@ async fn delivery_url(target_url: &str, expiry: i64, config: &Config) -> ApiResu
 
 #[derive(Clone, Copy)]
 enum EmailKind {
+    CustomerAccess,
     CustomerSignIn,
     CustomerSignup,
     OwnerSignIn,
@@ -834,6 +835,23 @@ async fn send_auth_email(
         .map_err(|_| ApiError::Dependency)
 }
 
+pub(crate) async fn send_customer_access_email(
+    sender: &SendEmail,
+    from: &CanonicalEmail,
+    email: &CanonicalEmail,
+    customer_app_url: &str,
+) -> ApiResult<()> {
+    let url = customer_login_url(customer_app_url)?;
+    send_auth_email(sender, from, email, &url, EmailKind::CustomerAccess).await
+}
+
+fn customer_login_url(customer_app_url: &str) -> ApiResult<String> {
+    url::Url::parse(customer_app_url)
+        .and_then(|base| base.join("/login"))
+        .map(|url| url.to_string())
+        .map_err(|_| ApiError::Configuration)
+}
+
 struct EmailContent {
     subject: &'static str,
     text: String,
@@ -841,11 +859,27 @@ struct EmailContent {
 }
 
 fn email_content(url: &str, kind: EmailKind) -> EmailContent {
-    let (subject, action) = match kind {
-        EmailKind::CustomerSignIn => ("Sign in to Campus Pilot", "Sign in"),
-        EmailKind::CustomerSignup => ("Confirm your Campus Pilot account", "Confirm account"),
-        EmailKind::OwnerSignIn => ("Sign in to Campus Pilot owner console", "Sign in"),
-    };
+    match kind {
+        EmailKind::CustomerAccess => EmailContent {
+            subject: "Campus Pilot customer access",
+            text: format!(
+                "Customer administrator access is ready. Open the customer portal and request a sign-in link: {url}"
+            ),
+            html: format!(
+                "<p>Customer administrator access is ready.</p><p><a href=\"{url}\">Open customer portal</a></p>"
+            ),
+        },
+        EmailKind::CustomerSignIn => action_email("Sign in to Campus Pilot", "Sign in", url),
+        EmailKind::CustomerSignup => {
+            action_email("Confirm your Campus Pilot account", "Confirm account", url)
+        }
+        EmailKind::OwnerSignIn => {
+            action_email("Sign in to Campus Pilot owner console", "Sign in", url)
+        }
+    }
+}
+
+fn action_email(subject: &'static str, action: &str, url: &str) -> EmailContent {
     EmailContent {
         subject,
         text: format!("{action}: {url}"),
@@ -857,7 +891,7 @@ fn email_content(url: &str, kind: EmailKind) -> EmailContent {
 mod tests {
     use super::{
         AccountAccess, AccountRole, AuthenticatedPortalUser, CustomerIdentity, EmailKind,
-        SignupInput, email_content,
+        SignupInput, customer_login_url, email_content,
     };
     use crate::domain::CanonicalEmail;
 
@@ -895,11 +929,25 @@ mod tests {
 
     #[test]
     fn owner_and_customer_emails_are_distinct() {
+        let access = email_content("https://example.test/login", EmailKind::CustomerAccess);
         let customer = email_content("https://example.test/customer", EmailKind::CustomerSignIn);
         let owner = email_content("https://example.test/owner", EmailKind::OwnerSignIn);
+        assert_eq!(access.subject, "Campus Pilot customer access");
+        assert!(access.text.contains("request a sign-in link"));
+        assert!(access.html.contains("Open customer portal"));
         assert_eq!(customer.subject, "Sign in to Campus Pilot");
         assert!(owner.subject.contains("owner console"));
         assert_ne!(customer.text, owner.text);
+    }
+
+    #[test]
+    fn customer_access_email_uses_the_customer_login_surface() {
+        assert_eq!(
+            customer_login_url("https://customer.example.test/portal")
+                .unwrap_or_else(|_| unreachable!()),
+            "https://customer.example.test/login"
+        );
+        assert!(customer_login_url("not-a-url").is_err());
     }
 
     #[test]
