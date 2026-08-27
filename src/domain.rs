@@ -263,7 +263,6 @@ pub struct LeaseClaims {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntitlementSet {
-    pub plan_key: String,
     pub modules: BTreeSet<String>,
     pub features: BTreeSet<String>,
     pub limits: Vec<LicenseLimit>,
@@ -273,7 +272,6 @@ pub struct EntitlementSet {
 
 impl EntitlementSet {
     pub fn from_storage(
-        plan_key: String,
         modules_json: &str,
         features_json: &str,
         limits_json: &str,
@@ -288,7 +286,6 @@ impl EntitlementSet {
             return Err(ApiError::Internal);
         }
         Ok(Self {
-            plan_key,
             modules,
             features,
             limits,
@@ -414,7 +411,6 @@ mod tests {
     #[test]
     fn entitlement_storage_is_parsed_once() {
         let entitlement = EntitlementSet::from_storage(
-            "complete".to_owned(),
             r#"["sis","agent","sis"]"#,
             r#"["agent.chat"]"#,
             "[]",

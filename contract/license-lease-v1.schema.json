@@ -31,7 +31,11 @@
     "installation_id": { "type": "string", "format": "uuid" },
     "jti": { "type": "string", "format": "uuid" },
     "sequence": { "type": "integer", "minimum": 1 },
-    "catalog_version": { "type": "string", "minLength": 1 },
+    "catalog_version": {
+      "type": "string",
+      "pattern": "^campus-pilot/[1-9][0-9]*$",
+      "description": "Code-owned product vocabulary version; independent of commercial plan keys."
+    },
     "iat": { "type": "integer", "minimum": 0 },
     "nbf": { "type": "integer", "minimum": 0 },
     "refresh_after": { "type": "integer", "minimum": 0 },

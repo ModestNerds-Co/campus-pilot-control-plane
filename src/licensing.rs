@@ -17,6 +17,12 @@ use crate::domain::{
 use crate::error::ApiError;
 use crate::store::{batch, bind_i64, bind_text, execute, first, prepared};
 
+/// Current code-owned module, feature, limit, and operation vocabulary.
+///
+/// This must match a version explicitly supported by the Campus Pilot runtime;
+/// it is deliberately independent of commercial plan keys.
+pub const PRODUCT_CATALOG_VERSION: &str = "campus-pilot/2";
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstallationRow {
     pub id: String,
@@ -36,7 +42,6 @@ struct ActivationCodeRow {
 struct EntitlementRow {
     current_period_end: Option<String>,
     grace_until: Option<String>,
-    plan_key: String,
     modules_json: String,
     features_json: String,
     limits_json: String,
@@ -290,7 +295,7 @@ pub async fn issue(
         installation_id: installation.id.clone(),
         jti: lease_id.clone(),
         sequence,
-        catalog_version: format!("plans/{}/1", entitlement.plan_key),
+        catalog_version: PRODUCT_CATALOG_VERSION.to_owned(),
         iat: issued_at.unix_timestamp(),
         nbf: (issued_at - Duration::seconds(30)).unix_timestamp(),
         refresh_after: refresh_after.unix_timestamp(),
@@ -401,7 +406,7 @@ async fn current_entitlement(
 ) -> Result<Option<EntitlementSet>, ApiError> {
     let row = first::<EntitlementRow>(
         db,
-        "SELECT subscriptions.current_period_end, subscriptions.grace_until, plans.key AS plan_key, \
+        "SELECT subscriptions.current_period_end, subscriptions.grace_until, \
          plans.modules_json, plans.features_json, plans.limits_json FROM subscriptions \
          INNER JOIN accounts ON accounts.id = subscriptions.account_id \
          INNER JOIN plans ON plans.id = subscriptions.plan_id WHERE subscriptions.account_id = ? \
@@ -414,7 +419,6 @@ async fn current_entitlement(
     .await?;
     row.map(|row| {
         EntitlementSet::from_storage(
-            row.plan_key,
             &row.modules_json,
             &row.features_json,
             &row.limits_json,
@@ -447,7 +451,7 @@ mod tests {
 
     use crate::config::Config;
 
-    use super::{ActivationRequest, public_keys, require_signing};
+    use super::{ActivationRequest, PRODUCT_CATALOG_VERSION, public_keys, require_signing};
 
     const PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAxbbyLLpJQoSoH8ia0Xw/lZTAUKtokEiy8l27VZND2zI=\n-----END PUBLIC KEY-----\n";
     const ROTATED_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEArVSef1/+8dsF8OsxRrBs6q6+hRI7leppr00NTz3n2NA=\n-----END PUBLIC KEY-----\n";
@@ -487,6 +491,12 @@ mod tests {
             "Main campus",
         );
         assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn issued_leases_use_the_code_owned_product_catalog() {
+        assert_eq!(PRODUCT_CATALOG_VERSION, "campus-pilot/2");
+        assert!(!PRODUCT_CATALOG_VERSION.contains("plans/"));
     }
 
     #[test]

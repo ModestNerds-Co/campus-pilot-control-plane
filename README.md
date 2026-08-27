@@ -13,6 +13,8 @@ Customer and owner identities, cookies, sessions, routes, and UI shells are sepa
 The canonical signed lease schema is [`contract/license-lease-v1.schema.json`](contract/license-lease-v1.schema.json).
 Provider and currency boundaries are defined in [`docs/payment-architecture.md`](docs/payment-architecture.md).
 
+The wire contract version (`cp-license/v1`) and product catalog version are independent. The control plane currently signs `catalog_version: campus-pilot/2`, matching the code-owned module, feature, limit, and operation vocabulary in Campus Pilot. Commercial plan keys never appear in this compatibility field. A campus verifies explicit catalog support before persisting a lease or changing module state.
+
 ## Local setup
 
 ```bash
