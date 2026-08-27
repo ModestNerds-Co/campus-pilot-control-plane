@@ -35,6 +35,7 @@ svg { width: 18px; height: 18px; stroke-width: 1.8; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 248px minmax(0, 1fr); }
 .rail { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 26px 18px 20px; color: #d9e6f4; background: var(--navy-deep); border-right: 1px solid rgb(255 255 255 / 9%); }
+.owner-rail { background: #071d38; }
 .rail-brand { display: flex; gap: 12px; align-items: center; padding: 0 8px 25px; }
 .rail-brand strong, .rail-brand small { display: block; }
 .rail-brand strong { color: white; font-size: 15px; }
@@ -176,11 +177,16 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 .login-brand p:last-child { max-width: 450px; color: #b8cbde; line-height: 1.6; }
 .login-panel { display: grid; place-items: center; padding: 32px; background: var(--surface); }
 .login-form { width: min(420px, 100%); }
+.signup-form { display: grid; width: min(620px, 100%); gap: 18px; }
+.signup-form > p.muted, .signup-form .button, .signup-form .auth-alternative { margin: 0; }
 .login-form h2 { margin: 8px 0; font-size: 34px; letter-spacing: -.04em; }
 .login-form > p.muted { margin: 0 0 26px; }
 .login-form .button { width: 100%; margin-top: 18px; }
 .notice { margin: 17px 0 0; padding: 12px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--surface-subtle); font-size: 12px; line-height: 1.5; }
 .debug-link { display: block; margin-top: 13px; color: var(--blue); font-size: 12px; font-weight: 600; }
+.auth-alternative { margin: 24px 0 0; color: var(--muted); font-size: 13px; text-align: center; }
+.auth-alternative a { color: var(--blue); font-weight: 600; }
+.owner-login-shell .login-brand { background: #071d38; }
 .centered-state { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--muted); }
 .spin { animation: spin .8s linear infinite; }
 

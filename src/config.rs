@@ -9,7 +9,8 @@ use worker::Env;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub environment: String,
-    pub public_app_url: String,
+    pub customer_app_url: String,
+    pub owner_app_url: String,
     pub owner_emails: BTreeSet<CanonicalEmail>,
     pub license_issuer: String,
     pub license_audience: String,
@@ -29,6 +30,7 @@ pub struct Config {
 
 impl Config {
     pub fn from_env(env: &Env) -> Result<Self, ApiError> {
+        let fallback_app_url = variable(env, "PUBLIC_APP_URL", "http://localhost:8787");
         let owner_emails = secret(env, "OWNER_EMAILS")
             .or_else(|| optional_variable(env, "OWNER_EMAILS"))
             .unwrap_or_default()
@@ -37,7 +39,8 @@ impl Config {
             .collect();
         Ok(Self {
             environment: variable(env, "ENVIRONMENT", "development"),
-            public_app_url: variable(env, "PUBLIC_APP_URL", "http://localhost:8787"),
+            customer_app_url: variable(env, "CUSTOMER_APP_URL", &fallback_app_url),
+            owner_app_url: variable(env, "OWNER_APP_URL", &fallback_app_url),
             owner_emails,
             license_issuer: variable(env, "LICENSE_ISSUER", "campus-pilot-control-plane"),
             license_audience: variable(env, "LICENSE_AUDIENCE", "campus-pilot"),

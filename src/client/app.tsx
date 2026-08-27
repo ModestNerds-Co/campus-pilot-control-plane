@@ -34,13 +34,14 @@ import {
   api,
   patch,
   post,
+  type CustomerSessionResponse,
   type HealthResponse,
-  type SessionResponse,
+  type OwnerSessionResponse,
+  type PortalSurfaceResponse,
 } from "./api";
 import { Drawer } from "./drawer";
 import { formatMoney, parseMajorAmount } from "./money";
 
-type Workspace = "customer" | "owner";
 type OwnerPage =
   | "overview"
   | "customers"
@@ -172,27 +173,44 @@ interface PaymentEvent {
 }
 
 export function App() {
+  const [surface, setSurface] = useState<
+    PortalSurfaceResponse["surface"] | null
+  >(null);
+  useEffect(() => {
+    const path = encodeURIComponent(window.location.pathname);
+    void api<PortalSurfaceResponse>(`/api/portal-surface?path=${path}`)
+      .then((response) => setSurface(response.surface))
+      .catch(() => setSurface("unknown"));
+  }, []);
+  if (surface === null)
+    return (
+      <CenteredState
+        icon={<Loader2 className="spin" />}
+        title="Loading portal"
+      />
+    );
+  if (surface === "unknown")
+    return <CenteredState icon={<CircleAlert />} title="Portal unavailable" />;
+  return surface === "owner" ? <OwnerApp /> : <CustomerApp />;
+}
+
+function CustomerApp() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [session, setSession] = useState<SessionResponse | null>(null);
+  const [session, setSession] = useState<CustomerSessionResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [workspace, setWorkspace] = useState<Workspace>("customer");
   const [notice, setNotice] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get("auth") === "invalid"
-      ? "That sign-in link has expired or was already used. Request a new one."
-      : null,
+    initialAuthNotice(),
   );
 
   const refreshSession = useCallback(async () => {
     setLoading(true);
     try {
       const [next, nextHealth] = await Promise.all([
-        api<SessionResponse>("/api/session"),
+        api<CustomerSessionResponse>("/api/customer/session"),
         api<HealthResponse>("/api/health"),
       ]);
       setSession(next);
       setHealth(nextHealth);
-      if (next.identity?.isOwner && next.identity.accounts.length === 0)
-        setWorkspace("owner");
     } finally {
       setLoading(false);
     }
@@ -206,37 +224,103 @@ export function App() {
     return (
       <CenteredState
         icon={<Loader2 className="spin" />}
-        title="Loading licensing"
+        title="Loading customer portal"
       />
     );
-  if (!session?.authenticated || !session.identity)
+  if (!session?.authenticated || !session.identity) {
+    if (window.location.pathname === "/signup")
+      return (
+        <CustomerSignup
+          emailReady={health?.email_ready === true}
+          onNotice={setNotice}
+          notice={notice}
+        />
+      );
+    if (window.location.pathname !== "/login")
+      window.history.replaceState({}, "", "/login");
     return (
-      <SignIn
+      <CustomerSignIn
         emailReady={health?.email_ready === true}
         onNotice={setNotice}
         notice={notice}
       />
     );
+  }
+  if (!window.location.pathname.startsWith("/portal"))
+    window.history.replaceState({}, "", "/portal");
   return (
-    <PortalShell
+    <CustomerShell
       identity={session.identity}
       onLogout={async () => {
-        await post("/api/auth/logout");
+        await post("/api/customer/auth/logout");
+        window.history.replaceState({}, "", "/login");
         await refreshSession();
       }}
-      onWorkspaceChange={setWorkspace}
-      workspace={workspace}
     >
-      {workspace === "owner" && session.identity.isOwner ? (
-        <OwnerPortal email={session.identity.email} />
-      ) : (
-        <CustomerPortal email={session.identity.email} />
-      )}
-    </PortalShell>
+      <CustomerPortal email={session.identity.email} />
+    </CustomerShell>
   );
 }
 
-function SignIn({
+function OwnerApp() {
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [session, setSession] = useState<OwnerSessionResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<string | null>(() =>
+    initialAuthNotice(),
+  );
+
+  const refreshSession = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [next, nextHealth] = await Promise.all([
+        api<OwnerSessionResponse>("/api/owner/session"),
+        api<HealthResponse>("/api/health"),
+      ]);
+      setSession(next);
+      setHealth(nextHealth);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSession();
+  }, [refreshSession]);
+
+  if (loading)
+    return (
+      <CenteredState
+        icon={<Loader2 className="spin" />}
+        title="Loading owner console"
+      />
+    );
+  if (!session?.authenticated || !session.identity) {
+    if (window.location.pathname !== "/owner/login")
+      window.history.replaceState({}, "", "/owner/login");
+    return (
+      <OwnerSignIn
+        emailReady={health?.email_ready === true}
+        notice={notice}
+        onNotice={setNotice}
+      />
+    );
+  }
+  if (window.location.pathname !== "/owner")
+    window.history.replaceState({}, "", "/owner");
+  return (
+    <OwnerPortal
+      email={session.identity.email}
+      onLogout={async () => {
+        await post("/api/owner/auth/logout");
+        window.history.replaceState({}, "", "/owner/login");
+        await refreshSession();
+      }}
+    />
+  );
+}
+
+function CustomerSignIn({
   emailReady,
   notice,
   onNotice,
@@ -255,7 +339,7 @@ function SignIn({
     setDebugUrl(null);
     try {
       const result = await post<{ ok: boolean; debug_url?: string }>(
-        "/api/auth/request-link",
+        "/api/customer/auth/request-link",
         { email },
       );
       onNotice("If that email has access, a sign-in link has been sent.");
@@ -275,7 +359,7 @@ function SignIn({
         <div>
           <p className="eyebrow light">Campus Pilot</p>
           <h1>Licensing and billing</h1>
-          <p>Manage subscriptions and connect Campus Pilot installations.</p>
+          <p>Manage your school account, subscription, and installations.</p>
         </div>
       </section>
       <section className="login-panel">
@@ -322,24 +406,233 @@ function SignIn({
               Open local sign-in link
             </a>
           ) : null}
+          <p className="auth-alternative">
+            New school? <a href="/signup">Create an account</a>
+          </p>
         </form>
       </section>
     </main>
   );
 }
 
-function PortalShell({
+function CustomerSignup({
+  emailReady,
+  notice,
+  onNotice,
+}: {
+  emailReady: boolean;
+  notice: string | null;
+  onNotice: (value: string) => void;
+}) {
+  const [form, setForm] = useState({
+    full_name: "",
+    email: "",
+    school_name: "",
+    country: "ZW",
+    preferred_currency: "USD",
+  });
+  const [pending, setPending] = useState(false);
+  const [debugUrl, setDebugUrl] = useState<string | null>(null);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!emailReady) return;
+    setPending(true);
+    setDebugUrl(null);
+    try {
+      const result = await post<{ ok: boolean; debug_url?: string }>(
+        "/api/customer/auth/signup",
+        form,
+      );
+      onNotice("Check your email to continue.");
+      setDebugUrl(result.debug_url ?? null);
+    } catch (error) {
+      onNotice(message(error));
+    } finally {
+      setPending(false);
+    }
+  };
+  const update = (field: keyof typeof form, value: string) =>
+    setForm((current) => ({ ...current, [field]: value }));
+  return (
+    <main className="login-shell signup-shell">
+      <section className="login-brand">
+        <div className="brand-mark">
+          <Building2 />
+        </div>
+        <div>
+          <p className="eyebrow light">Campus Pilot</p>
+          <h1>School account</h1>
+          <p>Create the account used to manage licensing and installations.</p>
+        </div>
+      </section>
+      <section className="login-panel">
+        <form className="login-form signup-form" onSubmit={submit}>
+          <p className="eyebrow">Customer signup</p>
+          <h2>Create account</h2>
+          <p className="muted">Confirm the email address before the account is created.</p>
+          <div className="form-row">
+            <label>
+              Your name
+              <input
+                autoComplete="name"
+                disabled={!emailReady}
+                onChange={(event) => update("full_name", event.target.value)}
+                required
+                value={form.full_name}
+              />
+            </label>
+            <label>
+              Work email
+              <input
+                autoComplete="email"
+                disabled={!emailReady}
+                onChange={(event) => update("email", event.target.value)}
+                required
+                type="email"
+                value={form.email}
+              />
+            </label>
+          </div>
+          <label>
+            School name
+            <input
+              autoComplete="organization"
+              disabled={!emailReady}
+              onChange={(event) => update("school_name", event.target.value)}
+              required
+              value={form.school_name}
+            />
+          </label>
+          <div className="form-row">
+            <label>
+              Country code
+              <input
+                disabled={!emailReady}
+                maxLength={2}
+                onChange={(event) => update("country", event.target.value.toUpperCase())}
+                pattern="[A-Za-z]{2}"
+                required
+                value={form.country}
+              />
+            </label>
+            <label>
+              Billing currency
+              <select
+                disabled={!emailReady}
+                onChange={(event) => update("preferred_currency", event.target.value)}
+                value={form.preferred_currency}
+              >
+                {[
+                  "USD",
+                  "ZWG",
+                  "ZAR",
+                  "BWP",
+                  "ZMW",
+                  "MWK",
+                  "MZN",
+                  "GBP",
+                  "EUR",
+                ].map((currency) => (
+                  <option key={currency} value={currency}>{currency}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button
+            className="button primary"
+            disabled={pending || !emailReady}
+            type="submit"
+          >
+            {pending ? <><Loader2 className="spin" />Sending…</> : "Continue"}
+          </button>
+          {notice ? <p className="notice" role="status">{notice}</p> : null}
+          {debugUrl ? <a className="debug-link" href={debugUrl}>Open local confirmation link</a> : null}
+          <p className="auth-alternative">
+            Already registered? <a href="/login">Sign in</a>
+          </p>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function OwnerSignIn({
+  emailReady,
+  notice,
+  onNotice,
+}: {
+  emailReady: boolean;
+  notice: string | null;
+  onNotice: (value: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [pending, setPending] = useState(false);
+  const [debugUrl, setDebugUrl] = useState<string | null>(null);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!emailReady) return;
+    setPending(true);
+    setDebugUrl(null);
+    try {
+      const result = await post<{ ok: boolean; debug_url?: string }>(
+        "/api/owner/auth/request-link",
+        { email },
+      );
+      onNotice("If that email has owner access, a sign-in link has been sent.");
+      setDebugUrl(result.debug_url ?? null);
+    } catch (error) {
+      onNotice(message(error));
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <main className="login-shell owner-login-shell">
+      <section className="login-brand">
+        <div className="brand-mark"><ShieldCheck /></div>
+        <div>
+          <p className="eyebrow light">Campus Pilot owner</p>
+          <h1>Owner console</h1>
+          <p>Manage customers, plans, payments, installations, and audit activity.</p>
+        </div>
+      </section>
+      <section className="login-panel">
+        <form className="login-form" onSubmit={submit}>
+          <p className="eyebrow">Restricted access</p>
+          <h2>Owner sign in</h2>
+          <p className="muted">
+            {emailReady ? "We’ll email you a short-lived sign-in link." : "Sign-in email delivery is not configured."}
+          </p>
+          <label>
+            Owner email
+            <input
+              autoComplete="email"
+              disabled={!emailReady}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              type="email"
+              value={email}
+            />
+          </label>
+          <button className="button primary" disabled={pending || !emailReady} type="submit">
+            {pending ? <><Loader2 className="spin" />Sending…</> : "Send sign-in link"}
+          </button>
+          {notice ? <p className="notice" role="status">{notice}</p> : null}
+          {debugUrl ? <a className="debug-link" href={debugUrl}>Open local sign-in link</a> : null}
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function CustomerShell({
   children,
   identity,
   onLogout,
-  onWorkspaceChange,
-  workspace,
 }: {
   children: ReactNode;
-  identity: NonNullable<SessionResponse["identity"]>;
+  identity: NonNullable<CustomerSessionResponse["identity"]>;
   onLogout: () => void;
-  onWorkspaceChange: (workspace: Workspace) => void;
-  workspace: Workspace;
 }) {
   return (
     <div className="app-shell">
@@ -353,31 +646,17 @@ function PortalShell({
             <small>Control plane</small>
           </div>
         </div>
-        <nav className="rail-nav" aria-label="Workspace">
-          <button
-            className={workspace === "customer" ? "active" : ""}
-            onClick={() => onWorkspaceChange("customer")}
-            type="button"
-          >
+        <nav className="rail-nav" aria-label="Customer portal">
+          <button className="active" type="button">
             <Building2 />
-            Customer portal
+            Licensing
           </button>
-          {identity.isOwner ? (
-            <button
-              className={workspace === "owner" ? "active" : ""}
-              onClick={() => onWorkspaceChange("owner")}
-              type="button"
-            >
-              <ShieldCheck />
-              Owner portal
-            </button>
-          ) : null}
         </nav>
         <div className="rail-account">
           <div className="avatar">{initials(identity.email)}</div>
           <div>
             <strong>{identity.email}</strong>
-            <small>{identity.isOwner ? "Platform owner" : "Customer"}</small>
+            <small>Customer</small>
           </div>
         </div>
         <button className="rail-signout" onClick={onLogout} type="button">
@@ -409,7 +688,7 @@ function CustomerPortal({ email }: { email: string }) {
     try {
       const [overview, catalog] = await Promise.all([
         api<{ accounts: PortalAccount[]; installations: Installation[] }>(
-          "/api/portal/overview",
+          "/api/customer/portal/overview",
         ),
         api<{ plans: Plan[]; prices: PlanPrice[] }>("/api/catalog/plans"),
       ]);
@@ -434,7 +713,7 @@ function CustomerPortal({ email }: { email: string }) {
     setPending(true);
     try {
       const response = await post<{ activation_code: string }>(
-        "/api/portal/activation-codes",
+        "/api/customer/portal/activation-codes",
         {
           account_id: selectedAccount,
           label: activationLabel,
@@ -451,7 +730,7 @@ function CustomerPortal({ email }: { email: string }) {
   const checkout = async (planPriceId: string) => {
     setPending(true);
     try {
-      const response = await post<{ url: string }>("/api/portal/checkout", {
+      const response = await post<{ url: string }>("/api/customer/portal/checkout", {
         account_id: selectedAccount,
         plan_price_id: planPriceId,
         idempotency_key: `checkout-${crypto.randomUUID()}`,
@@ -466,7 +745,7 @@ function CustomerPortal({ email }: { email: string }) {
   const billing = async (accountId: string, provider: string) => {
     setPending(true);
     try {
-      const response = await post<{ url: string }>("/api/portal/billing", {
+      const response = await post<{ url: string }>("/api/customer/portal/billing", {
         account_id: accountId,
         provider,
       });
@@ -627,7 +906,7 @@ function CustomerPortal({ email }: { email: string }) {
                         <td>
                           <a
                             className="table-action"
-                            href={`/api/portal/installations/${installation.id}/license`}
+                            href={`/api/customer/portal/installations/${installation.id}/license`}
                           >
                             <Download />
                             Offline license
@@ -799,37 +1078,56 @@ function CustomerPortal({ email }: { email: string }) {
   );
 }
 
-function OwnerPortal({ email }: { email: string }) {
+function OwnerPortal({ email, onLogout }: { email: string; onLogout: () => void }) {
   const [page, setPage] = useState<OwnerPage>("overview");
   return (
-    <div className="owner-layout">
-      <nav className="subnav" aria-label="Owner portal">
-        <p className="eyebrow">Owner portal</p>
-        {(
-          [
-            ["overview", LayoutDashboard, "Overview"],
-            ["customers", Users, "Customers"],
-            ["plans", BadgeDollarSign, "Plans"],
-            ["payments", CreditCard, "Payments"],
-            ["installations", Server, "Installations"],
-            ["leases", KeyRound, "Leases"],
-            ["audit", Activity, "Audit"],
-          ] as const
-        ).map(([key, Icon, label]) => (
-          <button
-            className={page === key ? "active" : ""}
-            key={key}
-            onClick={() => setPage(key)}
-            type="button"
-          >
-            <Icon />
-            {label}
-          </button>
-        ))}
-      </nav>
-      <div className="owner-content">
+    <div className="app-shell owner-shell">
+      <aside className="rail owner-rail">
+        <div className="rail-brand">
+          <span className="brand-mark small"><ShieldCheck /></span>
+          <div>
+            <strong>Campus Pilot</strong>
+            <small>Owner console</small>
+          </div>
+        </div>
+        <nav className="rail-nav" aria-label="Owner console">
+          {(
+            [
+              ["overview", LayoutDashboard, "Overview"],
+              ["customers", Users, "Customers"],
+              ["plans", BadgeDollarSign, "Plans"],
+              ["payments", CreditCard, "Payments"],
+              ["installations", Server, "Installations"],
+              ["leases", KeyRound, "Leases"],
+              ["audit", Activity, "Audit"],
+            ] as const
+          ).map(([key, Icon, label]) => (
+            <button
+              className={page === key ? "active" : ""}
+              key={key}
+              onClick={() => setPage(key)}
+              type="button"
+            >
+              <Icon />
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="rail-account">
+          <div className="avatar">{initials(email)}</div>
+          <div>
+            <strong>{email}</strong>
+            <small>Platform owner</small>
+          </div>
+        </div>
+        <button className="rail-signout" onClick={onLogout} type="button">
+          <LogOut />
+          Sign out
+        </button>
+      </aside>
+      <main className="page owner-content">
         <OwnerPageView email={email} page={page} />
-      </div>
+      </main>
     </div>
   );
 }
@@ -2109,6 +2407,14 @@ function message(error: unknown) {
   return error instanceof Error
     ? error.message
     : "The action could not be completed";
+}
+function initialAuthNotice() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("auth") === "invalid")
+    return "That sign-in link has expired or was already used. Request a new one.";
+  if (params.get("signup") === "invalid")
+    return "That confirmation link has expired or was already used. Start again.";
+  return null;
 }
 function initials(email: string) {
   return (

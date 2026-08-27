@@ -15,6 +15,7 @@ These rules apply to this repository.
 ## Portals and UI
 
 - Keep the customer portal and owner portal visibly and authoritatively separate.
+- Read `docs/portal-architecture.md` before changing portal hosts, signup, login, sessions, cookies, or owner/customer routing.
 - Use concise operational copy. Do not expose signing, fingerprint, schema, or migration implementation details to customers.
 - Forms, confirmations, and secondary workflows use accessible right-side drawers, never centered modals.
 - Never invent revenue, customer, payment, or installation data. Use honest loading, empty, error, and setup states.

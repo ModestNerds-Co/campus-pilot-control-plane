@@ -653,7 +653,7 @@ fn expand_plan(mut value: Value) -> Value {
     value
 }
 
-fn slugify(value: &str) -> String {
+pub(crate) fn slugify(value: &str) -> String {
     let mut slug = String::new();
     let mut previous_hyphen = false;
     for character in value.to_lowercase().chars() {

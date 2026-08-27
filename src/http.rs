@@ -59,12 +59,16 @@ pub fn finish(result: ApiResult<Response>, request_id: &str) -> WorkerResult<Res
     Ok(response)
 }
 
-pub fn assert_same_origin(request: &Request, config: &Config) -> ApiResult<()> {
+pub fn assert_same_origin(
+    request: &Request,
+    expected_app_url: &str,
+    config: &Config,
+) -> ApiResult<()> {
     let origin = request.headers().get("origin").map_err(ApiError::from)?;
     if origin.is_none() && !config.is_production() {
         return Ok(());
     }
-    let expected = url::Url::parse(&config.public_app_url)
+    let expected = url::Url::parse(expected_app_url)
         .ok()
         .map(|url| url.origin().ascii_serialization());
     if origin.as_deref() == expected.as_deref() {
@@ -125,13 +129,9 @@ pub fn delete_cookie(response: &mut Response, name: &str) -> ApiResult<()> {
         .map_err(ApiError::from)
 }
 
-pub fn redirect(config: &Config, path: &str) -> ApiResult<Response> {
-    let url = url::Url::parse(&format!(
-        "{}{}",
-        config.public_app_url.trim_end_matches('/'),
-        path
-    ))
-    .map_err(|_| ApiError::Configuration)?;
+pub fn redirect(app_url: &str, path: &str) -> ApiResult<Response> {
+    let url = url::Url::parse(&format!("{}{}", app_url.trim_end_matches('/'), path))
+        .map_err(|_| ApiError::Configuration)?;
     let headers = Headers::new();
     headers
         .set("location", url.as_str())

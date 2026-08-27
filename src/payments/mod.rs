@@ -390,11 +390,11 @@ pub async fn create_checkout(
         idempotency_key: input.idempotency_key.clone(),
         success_url: format!(
             "{}/?checkout=complete&session_id={{CHECKOUT_SESSION_ID}}",
-            config.public_app_url.trim_end_matches('/')
+            config.customer_app_url.trim_end_matches('/')
         ),
         cancel_url: format!(
             "{}/?checkout=cancelled",
-            config.public_app_url.trim_end_matches('/')
+            config.customer_app_url.trim_end_matches('/')
         ),
     };
     let session = adapter.create_checkout(&command).await?;
@@ -467,7 +467,7 @@ pub async fn create_billing_portal(
         )
     })?;
     adapter
-        .create_billing_portal(&customer.external_customer_id, &config.public_app_url)
+        .create_billing_portal(&customer.external_customer_id, &config.customer_app_url)
         .await
 }
 

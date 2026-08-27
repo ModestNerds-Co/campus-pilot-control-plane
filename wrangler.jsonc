@@ -29,6 +29,8 @@
   "vars": {
     "ENVIRONMENT": "production",
     "PUBLIC_APP_URL": "https://campus-pilot-control-plane.imngonii.workers.dev",
+    "CUSTOMER_APP_URL": "https://campus-pilot-control-plane.imngonii.workers.dev",
+    "OWNER_APP_URL": "https://campus-pilot-control-plane.imngonii.workers.dev",
     "AUTH_FROM_EMAIL": "licensing@antonlabs.cc",
     "LICENSE_ISSUER": "campus-pilot-control-plane",
     "LICENSE_AUDIENCE": "campus-pilot",

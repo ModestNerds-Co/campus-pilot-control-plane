@@ -1,12 +1,16 @@
 /** Shared typed fetch helpers for the control-plane portals. */
 
-export interface SessionResponse {
+export interface CustomerSessionResponse {
   authenticated: boolean;
   identity: {
     email: string;
-    isOwner: boolean;
     accounts: Array<{ id: string; name: string; role: "admin" | "billing" | "viewer" }>;
   } | null;
+}
+
+export interface OwnerSessionResponse {
+  authenticated: boolean;
+  identity: { email: string } | null;
 }
 
 export interface HealthResponse {
@@ -16,6 +20,10 @@ export interface HealthResponse {
   service: string;
   signing_ready: boolean;
   status: string;
+}
+
+export interface PortalSurfaceResponse {
+  surface: "customer" | "owner" | "unknown";
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

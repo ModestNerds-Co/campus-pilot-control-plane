@@ -1,10 +1,15 @@
 //! Explicit HTTP route handlers for public, customer, installation, and owner control-plane APIs.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use worker::{Request, Response, RouteContext};
 
-use crate::auth::{AccountRole, logout, request_magic_link, require_owner, require_user, session};
+use crate::auth::{
+    AccountRole, SignupInput, consume_customer_magic_link, consume_owner_magic_link,
+    consume_signup, customer_logout, customer_session, owner_logout, owner_session,
+    request_customer_magic_link, request_owner_magic_link, request_signup, require_owner,
+    require_user,
+};
 use crate::config::Config;
 use crate::domain::{InstallationCredential, PaymentProviderKey};
 use crate::error::ApiError;
@@ -31,6 +36,15 @@ use crate::store::{all, bind_text};
 #[derive(Debug, Deserialize)]
 struct EmailInput {
     email: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SignupBody {
+    full_name: String,
+    email: String,
+    school_name: String,
+    country: String,
+    preferred_currency: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +124,37 @@ pub async fn health(request: Request, context: RouteContext<()>) -> worker::Resu
     finish(result, &id)
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum PortalSurface {
+    Customer,
+    Owner,
+    Unknown,
+}
+
+pub async fn portal_surface(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = (|| -> ApiResult<Response> {
+        let config = Config::from_env(&context.env)?;
+        let request_url = request.url().map_err(ApiError::from)?;
+        let requested_path = request_url
+            .query_pairs()
+            .find_map(|(key, value)| (key == "path").then(|| value.into_owned()))
+            .unwrap_or_else(|| "/".to_owned());
+        let surface = classify_portal_surface(
+            &request_url.origin().ascii_serialization(),
+            &config.customer_app_url,
+            &config.owner_app_url,
+            &requested_path,
+        );
+        json_response(&json!({ "surface": surface }))
+    })();
+    finish(result, &id)
+}
+
 pub async fn keys(request: Request, context: RouteContext<()>) -> worker::Result<Response> {
     let id = request_id(&request);
     let result =
@@ -117,24 +162,27 @@ pub async fn keys(request: Request, context: RouteContext<()>) -> worker::Result
     finish(result, &id)
 }
 
-pub async fn auth_request_link(
+pub async fn customer_auth_signup(
     mut request: Request,
     context: RouteContext<()>,
 ) -> worker::Result<Response> {
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        let input = json_body::<EmailInput>(&mut request).await?;
-        let ip = request
-            .headers()
-            .get("cf-connecting-ip")
-            .map_err(ApiError::from)?
-            .unwrap_or_else(|| "unknown".to_owned());
+        assert_same_origin(&request, &config.customer_app_url, &config)?;
+        let body = json_body::<SignupBody>(&mut request).await?;
+        let input = SignupInput::parse(
+            &body.full_name,
+            &body.email,
+            &body.school_name,
+            &body.country,
+            &body.preferred_currency,
+        )?;
         let email_sender = context.env.send_email("EMAIL").ok();
-        request_magic_link(
+        request_signup(
             &context.d1("DB")?,
-            &input.email,
-            &ip,
+            input,
+            &request_ip(&request)?,
             &config,
             email_sender.as_ref(),
         )
@@ -144,46 +192,140 @@ pub async fn auth_request_link(
     finish(result, &id)
 }
 
-pub async fn auth_consume(request: Request, context: RouteContext<()>) -> worker::Result<Response> {
+pub async fn customer_auth_request_link(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        let token = request
-            .url()
-            .map_err(ApiError::from)?
-            .query_pairs()
-            .find_map(|(key, value)| (key == "token").then(|| value.into_owned()));
-        match token {
-            Some(token) => {
-                crate::auth::consume_magic_link(&context.d1("DB")?, &token, &config).await
-            }
-            None => Err(ApiError::client(
-                "magic_link_invalid",
-                "The sign-in link is invalid",
-                400,
-            )),
-        }
+        assert_same_origin(&request, &config.customer_app_url, &config)?;
+        let input = json_body::<EmailInput>(&mut request).await?;
+        let email_sender = context.env.send_email("EMAIL").ok();
+        request_customer_magic_link(
+            &context.d1("DB")?,
+            &input.email,
+            &request_ip(&request)?,
+            &config,
+            email_sender.as_ref(),
+        )
+        .await
     }
     .await;
     finish(result, &id)
 }
 
-pub async fn auth_logout(request: Request, context: RouteContext<()>) -> worker::Result<Response> {
+pub async fn customer_auth_consume(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
-        logout(&context.d1("DB")?, &request, &config).await
+        consume_customer_magic_link(&context.d1("DB")?, &query_token(&request)?, &config).await
     }
     .await;
     finish(result, &id)
 }
 
-pub async fn session_view(request: Request, context: RouteContext<()>) -> worker::Result<Response> {
+pub async fn customer_signup_consume(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        session(&context.d1("DB")?, &request, &config).await
+        consume_signup(&context.d1("DB")?, &query_token(&request)?, &config).await
+    }
+    .await;
+    finish(result, &id)
+}
+
+pub async fn customer_auth_logout(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = async {
+        let config = Config::from_env(&context.env)?;
+        assert_same_origin(&request, &config.customer_app_url, &config)?;
+        customer_logout(&context.d1("DB")?, &request, &config).await
+    }
+    .await;
+    finish(result, &id)
+}
+
+pub async fn customer_session_view(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = async {
+        let config = Config::from_env(&context.env)?;
+        customer_session(&context.d1("DB")?, &request, &config).await
+    }
+    .await;
+    finish(result, &id)
+}
+
+pub async fn owner_auth_request_link(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = async {
+        let config = Config::from_env(&context.env)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
+        let input = json_body::<EmailInput>(&mut request).await?;
+        let email_sender = context.env.send_email("EMAIL").ok();
+        request_owner_magic_link(
+            &context.d1("DB")?,
+            &input.email,
+            &request_ip(&request)?,
+            &config,
+            email_sender.as_ref(),
+        )
+        .await
+    }
+    .await;
+    finish(result, &id)
+}
+
+pub async fn owner_auth_consume(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = async {
+        let config = Config::from_env(&context.env)?;
+        consume_owner_magic_link(&context.d1("DB")?, &query_token(&request)?, &config).await
+    }
+    .await;
+    finish(result, &id)
+}
+
+pub async fn owner_auth_logout(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = async {
+        let config = Config::from_env(&context.env)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
+        owner_logout(&context.d1("DB")?, &request, &config).await
+    }
+    .await;
+    finish(result, &id)
+}
+
+pub async fn owner_session_view(
+    request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = async {
+        let config = Config::from_env(&context.env)?;
+        owner_session(&context.d1("DB")?, &request, &config).await
     }
     .await;
     finish(result, &id)
@@ -266,7 +408,7 @@ pub async fn portal_checkout(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.customer_app_url, &config)?;
         let db = context.d1("DB")?;
         let user = require_user(&db, &request, &config).await?;
         let input = json_body::<CheckoutInput>(&mut request).await?;
@@ -293,7 +435,7 @@ pub async fn portal_billing(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.customer_app_url, &config)?;
         let db = context.d1("DB")?;
         let user = require_user(&db, &request, &config).await?;
         let input = json_body::<AccountIdInput>(&mut request).await?;
@@ -315,7 +457,7 @@ pub async fn portal_activation_code(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.customer_app_url, &config)?;
         let db = context.d1("DB")?;
         let user = require_user(&db, &request, &config).await?;
         let input = json_body::<ActivationCodeInput>(&mut request).await?;
@@ -509,7 +651,7 @@ pub async fn owner_create_account(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
         let db = context.d1("DB")?;
         let operator = require_owner(&db, &request, &config).await?;
         let body = json_body::<CreateAccountBody>(&mut request).await?;
@@ -527,7 +669,7 @@ pub async fn owner_update_plan(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
         let db = context.d1("DB")?;
         let operator = require_owner(&db, &request, &config).await?;
         let plan_id = context
@@ -548,7 +690,7 @@ pub async fn owner_create_plan_price(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
         let db = context.d1("DB")?;
         let operator = require_owner(&db, &request, &config).await?;
         let body = json_body::<CreatePlanPriceBody>(&mut request).await?;
@@ -619,7 +761,7 @@ pub async fn owner_manual_subscription(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
         let db = context.d1("DB")?;
         let operator = require_owner(&db, &request, &config).await?;
         let input = json_body::<ManualSubscriptionInput>(&mut request).await?;
@@ -645,7 +787,7 @@ pub async fn owner_revoke_installation(
     let id = request_id(&request);
     let result = async {
         let config = Config::from_env(&context.env)?;
-        assert_same_origin(&request, &config)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
         let db = context.d1("DB")?;
         let operator = require_owner(&db, &request, &config).await?;
         let installation_id = context.param("installationId").ok_or_else(|| {
@@ -692,6 +834,56 @@ async fn owner_read(
     finish(result, &id)
 }
 
+fn request_ip(request: &Request) -> ApiResult<String> {
+    request
+        .headers()
+        .get("cf-connecting-ip")
+        .map_err(ApiError::from)
+        .map(|value| value.unwrap_or_else(|| "unknown".to_owned()))
+}
+
+fn query_token(request: &Request) -> ApiResult<String> {
+    request
+        .url()
+        .map_err(ApiError::from)?
+        .query_pairs()
+        .find_map(|(key, value)| (key == "token").then(|| value.into_owned()))
+        .ok_or_else(|| ApiError::client("magic_link_invalid", "The sign-in link is invalid", 400))
+}
+
+fn classify_portal_surface(
+    request_origin: &str,
+    customer_app_url: &str,
+    owner_app_url: &str,
+    requested_path: &str,
+) -> PortalSurface {
+    let customer_origin = url::Url::parse(customer_app_url)
+        .ok()
+        .map(|url| url.origin().ascii_serialization());
+    let owner_origin = url::Url::parse(owner_app_url)
+        .ok()
+        .map(|url| url.origin().ascii_serialization());
+    match (customer_origin, owner_origin) {
+        (Some(customer), Some(owner)) if customer != owner => {
+            if request_origin == owner {
+                PortalSurface::Owner
+            } else if request_origin == customer {
+                PortalSurface::Customer
+            } else {
+                PortalSurface::Unknown
+            }
+        }
+        (Some(_), Some(_)) => {
+            if requested_path == "/owner" || requested_path.starts_with("/owner/") {
+                PortalSurface::Owner
+            } else {
+                PortalSurface::Customer
+            }
+        }
+        _ => PortalSurface::Unknown,
+    }
+}
+
 fn expand_json_fields(mut row: Value) -> Value {
     let Some(object) = row.as_object_mut() else {
         return row;
@@ -713,4 +905,53 @@ fn expand_json_fields(mut row: Value) -> Value {
         *value = Value::Bool(value.as_i64() == Some(1));
     }
     row
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PortalSurface, classify_portal_surface};
+
+    #[test]
+    fn shared_host_uses_path_without_combining_sessions() {
+        assert_eq!(
+            classify_portal_surface(
+                "https://control.example.test",
+                "https://control.example.test",
+                "https://control.example.test",
+                "/owner/login",
+            ),
+            PortalSurface::Owner
+        );
+        assert_eq!(
+            classify_portal_surface(
+                "https://control.example.test",
+                "https://control.example.test",
+                "https://control.example.test",
+                "/signup",
+            ),
+            PortalSurface::Customer
+        );
+    }
+
+    #[test]
+    fn separate_hosts_override_a_misleading_path() {
+        assert_eq!(
+            classify_portal_surface(
+                "https://account.example.test",
+                "https://account.example.test",
+                "https://owner.example.test",
+                "/owner/login",
+            ),
+            PortalSurface::Customer
+        );
+        assert_eq!(
+            classify_portal_surface(
+                "https://owner.example.test",
+                "https://account.example.test",
+                "https://owner.example.test",
+                "/signup",
+            ),
+            PortalSurface::Owner
+        );
+    }
 }

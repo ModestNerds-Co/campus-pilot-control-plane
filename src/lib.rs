@@ -23,21 +23,37 @@ use worker::{Context, Env, Request, Response, Result, Router, event};
 async fn fetch(request: Request, env: Env, _context: Context) -> Result<Response> {
     Router::new()
         .get_async("/api/health", routes::health)
+        .get_async("/api/portal-surface", routes::portal_surface)
         .get_async("/api/v1/keys", routes::keys)
-        .post_async("/api/auth/request-link", routes::auth_request_link)
-        .get_async("/api/auth/consume", routes::auth_consume)
-        .post_async("/api/auth/logout", routes::auth_logout)
-        .get_async("/api/session", routes::session_view)
-        .get_async("/api/catalog/plans", routes::plans)
-        .get_async("/api/portal/overview", routes::portal_overview)
-        .post_async("/api/portal/checkout", routes::portal_checkout)
-        .post_async("/api/portal/billing", routes::portal_billing)
+        .post_async("/api/customer/auth/signup", routes::customer_auth_signup)
         .post_async(
-            "/api/portal/activation-codes",
+            "/api/customer/auth/request-link",
+            routes::customer_auth_request_link,
+        )
+        .get_async("/api/customer/auth/consume", routes::customer_auth_consume)
+        .get_async(
+            "/api/customer/auth/consume-signup",
+            routes::customer_signup_consume,
+        )
+        .post_async("/api/customer/auth/logout", routes::customer_auth_logout)
+        .get_async("/api/customer/session", routes::customer_session_view)
+        .post_async(
+            "/api/owner/auth/request-link",
+            routes::owner_auth_request_link,
+        )
+        .get_async("/api/owner/auth/consume", routes::owner_auth_consume)
+        .post_async("/api/owner/auth/logout", routes::owner_auth_logout)
+        .get_async("/api/owner/session", routes::owner_session_view)
+        .get_async("/api/catalog/plans", routes::plans)
+        .get_async("/api/customer/portal/overview", routes::portal_overview)
+        .post_async("/api/customer/portal/checkout", routes::portal_checkout)
+        .post_async("/api/customer/portal/billing", routes::portal_billing)
+        .post_async(
+            "/api/customer/portal/activation-codes",
             routes::portal_activation_code,
         )
         .get_async(
-            "/api/portal/installations/:installationId/license",
+            "/api/customer/portal/installations/:installationId/license",
             routes::portal_license,
         )
         .post_async(
