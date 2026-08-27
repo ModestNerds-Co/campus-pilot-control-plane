@@ -167,6 +167,10 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 .code-result { display: grid; gap: 18px; }
 .code-result p { margin: 0; color: var(--muted); }
 .code-result code { display: block; overflow-wrap: anywhere; padding: 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--navy); background: var(--surface-subtle); font-size: 13px; line-height: 1.6; }
+.activation-steps { display: grid; gap: 9px; margin: 0; padding-left: 22px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.copy-status { padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; font-size: 12px; }
+.copy-status.success { border-color: color-mix(in srgb, var(--success) 32%, var(--border)); color: var(--success); background: color-mix(in srgb, var(--success) 7%, var(--surface)); }
+.copy-status.error { border-color: color-mix(in srgb, var(--danger) 32%, var(--border)); color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
 .plan-list { display: grid; gap: 14px; }
 .plan-card { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--border); border-radius: 10px; }
 .plan-card h3 { margin: 4px 0 3px; font-size: 20px; }

@@ -9,6 +9,7 @@ Campus Pilot licensing has two separate browser applications backed by one contr
 - Authenticated routes: `/portal/*` for plans, subscriptions, payments, installations, activation codes, and account members.
 - Identity comes from a customer session and active `account_members` records.
 - Signup verifies the email address before creating the school account and its first administrator membership.
+- Online installation setup creates a one-time activation code and tells the customer to paste it into Campus Pilot Administration → Licensing → Connect. The customer does not download or manage a reusable license key; Campus Pilot obtains and stores its renewable license after the code is accepted.
 - Customer responses never expose owner status, owner navigation, vendor-wide totals, signing internals, or other customers.
 
 ## Owner portal

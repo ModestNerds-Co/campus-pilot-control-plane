@@ -694,6 +694,8 @@ function CustomerPortal({ email }: { email: string }) {
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [activationLabel, setActivationLabel] = useState("");
   const [activationCode, setActivationCode] = useState<string | null>(null);
+  const [activationExpiresAt, setActivationExpiresAt] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [pending, setPending] = useState(false);
 
   const load = useCallback(async () => {
@@ -726,7 +728,10 @@ function CustomerPortal({ email }: { email: string }) {
   const createActivation = async () => {
     setPending(true);
     try {
-      const response = await post<{ activation_code: string }>(
+      const response = await post<{
+        activation_code: string;
+        expires_at: string;
+      }>(
         "/api/customer/portal/activation-codes",
         {
           account_id: selectedAccount,
@@ -734,10 +739,22 @@ function CustomerPortal({ email }: { email: string }) {
         },
       );
       setActivationCode(response.activation_code);
+      setActivationExpiresAt(response.expires_at);
+      setCopyStatus("idle");
     } catch (activationError) {
       setError(message(activationError));
     } finally {
       setPending(false);
+    }
+  };
+
+  const copyActivationCode = async () => {
+    if (!activationCode) return;
+    try {
+      await navigator.clipboard.writeText(activationCode);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
     }
   };
 
@@ -791,7 +808,9 @@ function CustomerPortal({ email }: { email: string }) {
                 className="button primary"
                 onClick={() => {
                   setActivationCode(null);
+                  setActivationExpiresAt(null);
                   setActivationLabel("");
+                  setCopyStatus("idle");
                   setDrawer("activation");
                 }}
                 type="button"
@@ -941,7 +960,11 @@ function CustomerPortal({ email }: { email: string }) {
         title={
           activationCode ? "Activation code created" : "Connect installation"
         }
-        description="Use this once from the Campus Pilot Administration licensing screen."
+        description={
+          activationCode
+            ? "Use this code in Campus Pilot Administration."
+            : "Create a one-time code for a Campus Pilot server."
+        }
         footer={
           <>
             <button
@@ -994,18 +1017,39 @@ function CustomerPortal({ email }: { email: string }) {
             <p className="help">
               The code expires after 24 hours and is shown only once.
             </p>
+            <ol className="activation-steps">
+              <li>Create the code here.</li>
+              <li>Open Administration → Licensing in Campus Pilot.</li>
+              <li>Choose Connect and paste the code.</li>
+            </ol>
           </div>
         ) : (
           <div className="code-result">
-            <p>Copy this code now. It will not be shown again.</p>
+            <p>
+              Copy this code now, then paste it into Administration → Licensing → Connect.
+              Campus Pilot will obtain and store the license automatically.
+            </p>
             <code>{activationCode}</code>
             <button
               className="button secondary"
-              onClick={() => void navigator.clipboard.writeText(activationCode)}
+              onClick={() => void copyActivationCode()}
               type="button"
             >
-              Copy code
+              {copyStatus === "copied" ? "Copied" : "Copy code"}
             </button>
+            <p className="help">
+              {activationExpiresAt
+                ? `Use it before ${formatDateTime(activationExpiresAt)}.`
+                : "Use it within 24 hours."}
+            </p>
+            {copyStatus === "copied" ? (
+              <p className="copy-status success" role="status">Code copied.</p>
+            ) : null}
+            {copyStatus === "failed" ? (
+              <p className="copy-status error" role="alert">
+                The code could not be copied. Select it above and copy it manually.
+              </p>
+            ) : null}
           </div>
         )}
       </Drawer>
