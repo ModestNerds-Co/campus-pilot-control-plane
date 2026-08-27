@@ -23,6 +23,7 @@ These rules apply to this repository.
 
 - `/Users/modestnerd/.codex/skills/ngoni-rust/SKILL.md` is the source of truth for Rust design, implementation, review, and verification in this repository.
 - D1 is authoritative for commercial state. KV may be added only as a cache.
+- Portal transactional email uses the native Cloudflare Email Sending binding. Ask before introducing or replacing it with an external email provider; keep the sender address in deployment configuration.
 - Every mutating endpoint must be authenticated, tenant/account scoped, origin checked where browser-driven, idempotent where externally retried, and audited.
 - Verify with `pnpm typecheck`, `pnpm test`, and `pnpm build` before deployment.
 - Apply D1 migrations locally and remotely through Wrangler; do not mutate the production schema with ad-hoc SQL.

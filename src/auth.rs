@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::Duration;
 use uuid::Uuid;
-use worker::wasm_bindgen::JsValue;
-use worker::{D1Database, Fetch, Headers, Method, Request, RequestInit, Response};
+use worker::{D1Database, EmailAddress, Request, Response, SendEmail, SendEmailBuilder};
 
 use crate::clock::{format, now, now_iso};
 use crate::config::Config;
@@ -170,6 +169,7 @@ pub async fn request_magic_link(
     raw_email: &str,
     request_ip: &str,
     config: &Config,
+    email_sender: Option<&SendEmail>,
 ) -> ApiResult<Response> {
     let email = CanonicalEmail::parse(raw_email)?;
     let member = first::<serde_json::Value>(
@@ -185,6 +185,9 @@ pub async fn request_magic_link(
     let allowed = member || config.owner_emails.contains(&email);
     let mut debug_url = None;
     if allowed && let Some(pepper) = config.session_pepper.as_deref() {
+        if config.is_production() && (email_sender.is_none() || config.auth_from_email.is_none()) {
+            return Err(ApiError::Configuration);
+        }
         let token = random_token("cpml_")?;
         let token_hash = hash_secret(&token, Some(pepper));
         let ip_hash = hash_secret(request_ip, Some(pepper));
@@ -209,8 +212,8 @@ pub async fn request_magic_link(
             config.public_app_url.trim_end_matches('/'),
             url::form_urlencoded::byte_serialize(token.as_bytes()).collect::<String>()
         );
-        if config.resend_api_key.is_some() && config.auth_from_email.is_some() {
-            send_magic_link(config, &email, &url).await?;
+        if let (Some(sender), Some(from)) = (email_sender, config.auth_from_email.as_ref()) {
+            send_magic_link(sender, from, &email, &url).await?;
         } else if !config.is_production() {
             debug_url = Some(url);
         }
@@ -297,49 +300,50 @@ fn redirect_to(config: &Config, path: &str) -> ApiResult<Response> {
     Response::redirect(url).map_err(ApiError::from)
 }
 
-async fn send_magic_link(config: &Config, email: &CanonicalEmail, url: &str) -> ApiResult<()> {
-    let api_key = config
-        .resend_api_key
-        .as_deref()
-        .ok_or(ApiError::Configuration)?;
-    let from = config
-        .auth_from_email
-        .as_deref()
-        .ok_or(ApiError::Configuration)?;
-    let headers = Headers::new();
-    headers
-        .set("authorization", &format!("Bearer {api_key}"))
-        .map_err(ApiError::from)?;
-    headers
-        .set("content-type", "application/json")
-        .map_err(ApiError::from)?;
-    let body = serde_json::to_string(&json!({
-        "from": from,
-        "to": [email.as_str()],
-        "subject": "Sign in to Campus Pilot licensing",
-        "html": format!("<p><a href=\"{url}\">Sign in to Campus Pilot licensing</a></p>"),
-    }))
-    .map_err(|_| ApiError::Internal)?;
-    let mut init = RequestInit::new();
-    init.with_method(Method::Post)
-        .with_headers(headers)
-        .with_body(Some(JsValue::from_str(&body)));
-    let request =
-        Request::new_with_init("https://api.resend.com/emails", &init).map_err(ApiError::from)?;
-    let response = Fetch::Request(request)
-        .send()
+async fn send_magic_link(
+    sender: &SendEmail,
+    from: &CanonicalEmail,
+    email: &CanonicalEmail,
+    url: &str,
+) -> ApiResult<()> {
+    let content = magic_link_content(url);
+    let from = EmailAddress::new("Campus Pilot", from.as_str());
+    let message = SendEmailBuilder::builder_with_email_address_and_str(
+        &from,
+        email.as_str(),
+        content.subject,
+    )
+    .text(&content.text)
+    .html(&content.html)
+    .build();
+    sender
+        .send_with_builder(&message)
         .await
-        .map_err(|_| ApiError::Dependency)?;
-    if (200..300).contains(&response.status_code()) {
-        Ok(())
-    } else {
-        Err(ApiError::Dependency)
+        .map(|_| ())
+        .map_err(|_| ApiError::Dependency)
+}
+
+struct MagicLinkContent {
+    subject: &'static str,
+    text: String,
+    html: String,
+}
+
+fn magic_link_content(url: &str) -> MagicLinkContent {
+    MagicLinkContent {
+        subject: "Sign in to Campus Pilot licensing",
+        text: format!("Sign in to Campus Pilot licensing: {url}"),
+        html: format!(
+            "<p>Use the link below to sign in to Campus Pilot licensing.</p><p><a href=\"{url}\">Sign in</a></p>"
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AccountAccess, AccountRole, AuthenticatedPortalUser, PortalIdentity};
+    use super::{
+        AccountAccess, AccountRole, AuthenticatedPortalUser, PortalIdentity, magic_link_content,
+    };
     use crate::domain::CanonicalEmail;
 
     fn test_user() -> AuthenticatedPortalUser {
@@ -373,5 +377,17 @@ mod tests {
             user.require_account("another", &[AccountRole::Billing])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn magic_link_email_has_plain_text_and_html_fallbacks() {
+        let content = magic_link_content("https://licensing.example.test/sign-in?token=safe");
+        assert_eq!(content.subject, "Sign in to Campus Pilot licensing");
+        assert!(
+            content
+                .text
+                .contains("https://licensing.example.test/sign-in")
+        );
+        assert!(content.html.contains("<a href="));
     }
 }

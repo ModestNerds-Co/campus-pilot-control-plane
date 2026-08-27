@@ -20,9 +20,16 @@
       "migrations_dir": "migrations"
     }
   ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["licensing@antonlabs.cc"]
+    }
+  ],
   "vars": {
     "ENVIRONMENT": "production",
     "PUBLIC_APP_URL": "https://campus-pilot-control-plane.imngonii.workers.dev",
+    "AUTH_FROM_EMAIL": "licensing@antonlabs.cc",
     "LICENSE_ISSUER": "campus-pilot-control-plane",
     "LICENSE_AUDIENCE": "campus-pilot",
     "LICENSE_SIGNING_KEY_ID": "production-1",

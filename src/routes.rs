@@ -102,7 +102,8 @@ pub async fn health(request: Request, context: RouteContext<()>) -> worker::Resu
             "environment": config.environment,
             "signing_ready": config.signing_private_key.is_some(),
             "payments_ready": providers(&config).into_iter().any(|provider| provider.configured),
-            "email_ready": config.resend_api_key.is_some() && config.auth_from_email.is_some(),
+            "email_ready": context.env.send_email("EMAIL").is_ok()
+                && config.auth_from_email.is_some(),
         }))
     })();
     finish(result, &id)
@@ -128,7 +129,15 @@ pub async fn auth_request_link(
             .get("cf-connecting-ip")
             .map_err(ApiError::from)?
             .unwrap_or_else(|| "unknown".to_owned());
-        request_magic_link(&context.d1("DB")?, &input.email, &ip, &config).await
+        let email_sender = context.env.send_email("EMAIL").ok();
+        request_magic_link(
+            &context.d1("DB")?,
+            &input.email,
+            &ip,
+            &config,
+            email_sender.as_ref(),
+        )
+        .await
     }
     .await;
     finish(result, &id)

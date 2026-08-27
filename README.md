@@ -29,21 +29,21 @@ OWNER_EMAILS="owner@example.com"
 # Add only the adapters used in this environment, for example:
 STRIPE_SECRET_KEY="sk_test_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
-RESEND_API_KEY="re_..."
-AUTH_FROM_EMAIL="Campus Pilot <licensing@example.com>"
 ```
 
-When `ENVIRONMENT=development` and email delivery is not configured, the magic-link request endpoint returns a local preview URL. Production never returns authentication tokens.
-Production customer and owner sign-in requires both `RESEND_API_KEY` and `AUTH_FROM_EMAIL`; without them, the portal displays an email-delivery setup state.
+Portal magic links are sent through the native Cloudflare Email Sending binding. The sender domain must be onboarded in Cloudflare Email Service, `AUTH_FROM_EMAIL` must use that domain, and the Worker binding should restrict `allowed_sender_addresses` to the configured sender. No external email-provider API key is required.
+
+Local Wrangler development simulates the email binding by default. When a development environment has no email binding, the magic-link request endpoint returns a local preview URL. Production never returns authentication tokens.
 
 ## Cloudflare deployment
 
 1. Create D1 with `pnpm wrangler d1 create campus-pilot-control-plane` and put its ID in `wrangler.jsonc`.
 2. Apply migrations with `pnpm db:migrate:remote`.
 3. Configure every secret through Wrangler or Secrets Store.
-4. Set production `PUBLIC_APP_URL` and signing metadata as non-secret vars; keep `OWNER_EMAILS` in Worker secrets.
-5. Build and deploy with `pnpm deploy`.
-6. Put Cloudflare Access in front of `/owner/*` and `/api/owner/*` as defense in depth.
-7. Register `/api/webhooks/{provider}` for every configured adapter and test checkout, renewal, failure, cancellation, refund, activation, lease renewal, and revocation end to end.
+4. Onboard the sender domain under Cloudflare Email Service, configure the `send_email` binding, and set `AUTH_FROM_EMAIL` as a non-secret var.
+5. Set production `PUBLIC_APP_URL` and signing metadata as non-secret vars; keep `OWNER_EMAILS` in Worker secrets.
+6. Build and deploy with `pnpm deploy`.
+7. Put Cloudflare Access in front of `/owner/*` and `/api/owner/*` as defense in depth.
+8. Register `/api/webhooks/{provider}` for every configured adapter and test checkout, renewal, failure, cancellation, refund, activation, lease renewal, and revocation end to end.
 
 Plans do not contain one global price. Add provider price mappings per currency in the owner portal. The core stores explicit currency exponents and integer minor units, and keeps original, settlement, fee, and exchange-rate evidence separate.

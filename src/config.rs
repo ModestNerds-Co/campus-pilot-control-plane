@@ -23,8 +23,7 @@ pub struct Config {
     pub session_pepper: Option<String>,
     pub stripe_secret_key: Option<String>,
     pub stripe_webhook_secret: Option<String>,
-    pub resend_api_key: Option<String>,
-    pub auth_from_email: Option<String>,
+    pub auth_from_email: Option<CanonicalEmail>,
 }
 
 impl Config {
@@ -52,9 +51,9 @@ impl Config {
             session_pepper: secret(env, "SESSION_PEPPER"),
             stripe_secret_key: secret(env, "STRIPE_SECRET_KEY"),
             stripe_webhook_secret: secret(env, "STRIPE_WEBHOOK_SECRET"),
-            resend_api_key: secret(env, "RESEND_API_KEY"),
-            auth_from_email: secret(env, "AUTH_FROM_EMAIL")
-                .or_else(|| optional_variable(env, "AUTH_FROM_EMAIL")),
+            auth_from_email: optional_variable(env, "AUTH_FROM_EMAIL")
+                .map(|value| CanonicalEmail::parse(&value).map_err(|_| ApiError::Configuration))
+                .transpose()?,
         })
     }
 
