@@ -38,7 +38,8 @@ export function Drawer({ open, title, description, onClose, children, footer }: 
             ),
           )
         : [];
-    requestAnimationFrame(() => focusable()[0]?.focus());
+    const preferredFocus = panel?.querySelector<HTMLElement>('[data-autofocus="true"]');
+    requestAnimationFrame(() => (preferredFocus ?? focusable()[0])?.focus());
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();

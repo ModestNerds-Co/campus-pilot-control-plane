@@ -695,6 +695,7 @@ function CustomerPortal({ email }: { email: string }) {
   const [activationLabel, setActivationLabel] = useState("");
   const [activationCode, setActivationCode] = useState<string | null>(null);
   const [activationExpiresAt, setActivationExpiresAt] = useState<string | null>(null);
+  const [activationError, setActivationError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [pending, setPending] = useState(false);
 
@@ -727,6 +728,7 @@ function CustomerPortal({ email }: { email: string }) {
 
   const createActivation = async () => {
     setPending(true);
+    setActivationError(null);
     try {
       const response = await post<{
         activation_code: string;
@@ -741,8 +743,8 @@ function CustomerPortal({ email }: { email: string }) {
       setActivationCode(response.activation_code);
       setActivationExpiresAt(response.expires_at);
       setCopyStatus("idle");
-    } catch (activationError) {
-      setError(message(activationError));
+    } catch (requestError) {
+      setActivationError(message(requestError));
     } finally {
       setPending(false);
     }
@@ -809,6 +811,7 @@ function CustomerPortal({ email }: { email: string }) {
                 onClick={() => {
                   setActivationCode(null);
                   setActivationExpiresAt(null);
+                  setActivationError(null);
                   setActivationLabel("");
                   setCopyStatus("idle");
                   setDrawer("activation");
@@ -1009,11 +1012,15 @@ function CustomerPortal({ email }: { email: string }) {
             <label>
               Installation label
               <input
+                data-autofocus="true"
                 onChange={(event) => setActivationLabel(event.target.value)}
                 placeholder="Main campus server"
                 value={activationLabel}
               />
             </label>
+            {activationError ? (
+              <p className="form-error" role="alert">{activationError}</p>
+            ) : null}
             <p className="help">
               The code expires after 24 hours and is shown only once.
             </p>
