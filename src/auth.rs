@@ -11,8 +11,9 @@ use crate::config::Config;
 use crate::crypto::{hash_secret, random_token};
 use crate::domain::CanonicalEmail;
 use crate::error::ApiError;
-use crate::http::{ApiResult, cookie, delete_cookie_header, json, set_cookie_header};
-use crate::store::{all, bind_text, execute, first};
+use crate::http::{ApiResult, cookie, delete_cookie, json, redirect, set_cookie};
+use crate::short_links::create_short_link;
+use crate::store::{all, batch_changes, bind_text, execute, first, prepared};
 
 pub const SESSION_COOKIE: &str = "cp_control_session";
 
@@ -73,11 +74,6 @@ impl OwnerOperator {
 
 #[derive(Debug, Deserialize)]
 struct SessionRow {
-    email: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct MagicLinkRow {
     email: String,
 }
 
@@ -185,14 +181,31 @@ pub async fn request_magic_link(
     let allowed = member || config.owner_emails.contains(&email);
     let mut debug_url = None;
     if allowed && let Some(pepper) = config.session_pepper.as_deref() {
-        if config.is_production() && (email_sender.is_none() || config.auth_from_email.is_none()) {
+        if config.is_production()
+            && (email_sender.is_none()
+                || config.auth_from_email.is_none()
+                || config.rerout_api_key.is_none())
+        {
             return Err(ApiError::Configuration);
         }
         let token = random_token("cpml_")?;
         let token_hash = hash_secret(&token, Some(pepper));
         let ip_hash = hash_secret(request_ip, Some(pepper));
         let created_at = now_iso()?;
-        let expires_at = format(now() + Duration::minutes(config.magic_link_minutes))?;
+        let expiry = now() + Duration::minutes(config.magic_link_minutes);
+        let expires_at = format(expiry)?;
+        let target_url = format!(
+            "{}/api/auth/consume?token={}",
+            config.public_app_url.trim_end_matches('/'),
+            url::form_urlencoded::byte_serialize(token.as_bytes()).collect::<String>()
+        );
+        let delivery_url = match config.rerout_api_key.as_deref() {
+            Some(api_key) => {
+                create_short_link(&target_url, expiry.unix_timestamp(), api_key).await?
+            }
+            None if !config.is_production() => target_url,
+            None => return Err(ApiError::Configuration),
+        };
         execute(
                 db,
                 "INSERT INTO magic_links (id, email, token_hash, expires_at, requested_ip_hash, created_at) \
@@ -207,15 +220,10 @@ pub async fn request_magic_link(
                 ],
             )
             .await?;
-        let url = format!(
-            "{}/api/auth/consume?token={}",
-            config.public_app_url.trim_end_matches('/'),
-            url::form_urlencoded::byte_serialize(token.as_bytes()).collect::<String>()
-        );
         if let (Some(sender), Some(from)) = (email_sender, config.auth_from_email.as_ref()) {
-            send_magic_link(sender, from, &email, &url).await?;
+            send_magic_link(sender, from, &email, &delivery_url).await?;
         } else if !config.is_production() {
-            debug_url = Some(url);
+            debug_url = Some(delivery_url);
         }
     }
     json(&json!({ "ok": true, "debug_url": debug_url }))
@@ -232,46 +240,55 @@ pub async fn consume_magic_link(
         .ok_or(ApiError::Configuration)?;
     let token_hash = hash_secret(token, Some(pepper));
     let consumed_at = now_iso()?;
-    let Some(link) = first::<MagicLinkRow>(
-        db,
-        "UPDATE magic_links SET consumed_at = ? \
-         WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ? RETURNING email",
-        vec![
-            bind_text(&consumed_at),
-            bind_text(&token_hash),
-            bind_text(&consumed_at),
-        ],
-    )
-    .await?
-    else {
-        return redirect_to(config, "/?auth=invalid");
-    };
-    let email = CanonicalEmail::parse(&link.email).map_err(|_| ApiError::Internal)?;
     let session_token = random_token("cpsess_")?;
     let session_hash = hash_secret(&session_token, Some(pepper));
     let expires_at = format(now() + Duration::days(config.session_days))?;
-    execute(
-        db,
-        "INSERT INTO portal_sessions (id, email, token_hash, expires_at, last_seen_at, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?)",
-        vec![
-            bind_text(&Uuid::new_v4().to_string()),
-            bind_text(email.as_str()),
-            bind_text(&session_hash),
-            bind_text(&expires_at),
-            bind_text(&consumed_at),
-            bind_text(&consumed_at),
-        ],
-    )
-    .await?;
-    let response = redirect_to(config, "/")?;
     let max_age = config.session_days.saturating_mul(86_400);
-    Ok(response.with_headers(set_cookie_header(
+    let mut response = redirect(config, "/")?;
+    set_cookie(
+        &mut response,
         SESSION_COOKIE,
         &session_token,
         max_age,
         config.is_production(),
-    )?))
+    )?;
+    let changes = batch_changes(
+        db,
+        vec![
+            prepared(
+                db,
+                "UPDATE magic_links SET consumed_at = ? \
+                 WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?",
+                vec![
+                    bind_text(&consumed_at),
+                    bind_text(&token_hash),
+                    bind_text(&consumed_at),
+                ],
+            )?,
+            prepared(
+                db,
+                "INSERT INTO portal_sessions \
+                 (id, email, token_hash, expires_at, last_seen_at, created_at) \
+                 SELECT ?, email, ?, ?, ?, ? FROM magic_links \
+                 WHERE token_hash = ? AND consumed_at = ? AND changes() = 1",
+                vec![
+                    bind_text(&Uuid::new_v4().to_string()),
+                    bind_text(&session_hash),
+                    bind_text(&expires_at),
+                    bind_text(&consumed_at),
+                    bind_text(&consumed_at),
+                    bind_text(&token_hash),
+                    bind_text(&consumed_at),
+                ],
+            )?,
+        ],
+    )
+    .await?;
+    if changes.as_slice() == [1, 1] {
+        Ok(response)
+    } else {
+        redirect(config, "/?auth=invalid")
+    }
 }
 
 pub async fn logout(db: &D1Database, request: &Request, config: &Config) -> ApiResult<Response> {
@@ -287,17 +304,9 @@ pub async fn logout(db: &D1Database, request: &Request, config: &Config) -> ApiR
         )
         .await?;
     }
-    Ok(json(&json!({ "ok": true }))?.with_headers(delete_cookie_header(SESSION_COOKIE)?))
-}
-
-fn redirect_to(config: &Config, path: &str) -> ApiResult<Response> {
-    let url = url::Url::parse(&format!(
-        "{}{}",
-        config.public_app_url.trim_end_matches('/'),
-        path
-    ))
-    .map_err(|_| ApiError::Configuration)?;
-    Response::redirect(url).map_err(ApiError::from)
+    let mut response = json(&json!({ "ok": true }))?;
+    delete_cookie(&mut response, SESSION_COOKIE)?;
+    Ok(response)
 }
 
 async fn send_magic_link(

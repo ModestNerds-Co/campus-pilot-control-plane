@@ -43,7 +43,8 @@
       "LICENSE_SIGNING_PRIVATE_KEY",
       "LICENSE_SIGNING_PUBLIC_KEY",
       "SESSION_PEPPER",
-      "OWNER_EMAILS"
+      "OWNER_EMAILS",
+      "REROUT_API_KEY"
     ]
   },
   "observability": {

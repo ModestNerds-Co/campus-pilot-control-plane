@@ -75,6 +75,23 @@ pub async fn batch(db: &D1Database, statements: Vec<D1PreparedStatement>) -> Res
     Ok(())
 }
 
+pub async fn batch_changes(
+    db: &D1Database,
+    statements: Vec<D1PreparedStatement>,
+) -> Result<Vec<usize>, ApiError> {
+    db.batch(statements)
+        .await
+        .map_err(ApiError::from)?
+        .into_iter()
+        .map(|result| {
+            result
+                .meta()
+                .map_err(ApiError::from)
+                .map(|metadata| metadata.and_then(|value| value.changes).unwrap_or(0))
+        })
+        .collect()
+}
+
 pub fn prepared(
     db: &D1Database,
     sql: &str,

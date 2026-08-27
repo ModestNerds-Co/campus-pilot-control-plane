@@ -176,7 +176,11 @@ export function App() {
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [workspace, setWorkspace] = useState<Workspace>("customer");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("auth") === "invalid"
+      ? "That sign-in link has expired or was already used. Request a new one."
+      : null,
+  );
 
   const refreshSession = useCallback(async () => {
     setLoading(true);

@@ -21,6 +21,7 @@ pub struct Config {
     pub magic_link_minutes: i64,
     pub session_days: i64,
     pub session_pepper: Option<String>,
+    pub rerout_api_key: Option<String>,
     pub stripe_secret_key: Option<String>,
     pub stripe_webhook_secret: Option<String>,
     pub auth_from_email: Option<CanonicalEmail>,
@@ -49,6 +50,7 @@ impl Config {
             magic_link_minutes: positive_i64(env, "MAGIC_LINK_MINUTES", 15),
             session_days: positive_i64(env, "SESSION_DAYS", 7),
             session_pepper: secret(env, "SESSION_PEPPER"),
+            rerout_api_key: secret(env, "REROUT_API_KEY"),
             stripe_secret_key: secret(env, "STRIPE_SECRET_KEY"),
             stripe_webhook_secret: secret(env, "STRIPE_WEBHOOK_SECRET"),
             auth_from_email: optional_variable(env, "AUTH_FROM_EMAIL")

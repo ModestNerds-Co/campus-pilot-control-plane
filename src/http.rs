@@ -102,32 +102,70 @@ pub fn bearer_token(request: &Request) -> Option<String> {
     }
 }
 
-pub fn set_cookie_header(
+pub fn set_cookie(
+    response: &mut Response,
     name: &str,
     value: &str,
     max_age_seconds: i64,
     secure: bool,
-) -> Result<Headers, ApiError> {
-    let headers = Headers::new();
-    let secure_suffix = if secure { "; Secure" } else { "" };
-    headers
+) -> ApiResult<()> {
+    response
+        .headers_mut()
         .set(
             "set-cookie",
-            &format!(
-                "{name}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}{secure_suffix}"
-            ),
+            &cookie_value(name, value, max_age_seconds, secure),
         )
-        .map_err(ApiError::from)?;
-    Ok(headers)
+        .map_err(ApiError::from)
 }
 
-pub fn delete_cookie_header(name: &str) -> Result<Headers, ApiError> {
+pub fn delete_cookie(response: &mut Response, name: &str) -> ApiResult<()> {
+    response
+        .headers_mut()
+        .set("set-cookie", &cookie_value(name, "", 0, false))
+        .map_err(ApiError::from)
+}
+
+pub fn redirect(config: &Config, path: &str) -> ApiResult<Response> {
+    let url = url::Url::parse(&format!(
+        "{}{}",
+        config.public_app_url.trim_end_matches('/'),
+        path
+    ))
+    .map_err(|_| ApiError::Configuration)?;
     let headers = Headers::new();
     headers
-        .set(
-            "set-cookie",
-            &format!("{name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"),
-        )
+        .set("location", url.as_str())
         .map_err(ApiError::from)?;
-    Ok(headers)
+    Ok(Response::empty()
+        .map_err(ApiError::from)?
+        .with_status(303)
+        .with_headers(headers))
+}
+
+fn cookie_value(name: &str, value: &str, max_age_seconds: i64, secure: bool) -> String {
+    let secure_suffix = if secure { "; Secure" } else { "" };
+    format!(
+        "{name}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}{secure_suffix}"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cookie_value;
+
+    #[test]
+    fn production_session_cookie_is_http_only_and_secure() {
+        assert_eq!(
+            cookie_value("session", "secret", 60, true),
+            "session=secret; Path=/; HttpOnly; SameSite=Lax; Max-Age=60; Secure"
+        );
+    }
+
+    #[test]
+    fn deletion_cookie_expires_immediately() {
+        assert_eq!(
+            cookie_value("session", "", 0, false),
+            "session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        );
+    }
 }

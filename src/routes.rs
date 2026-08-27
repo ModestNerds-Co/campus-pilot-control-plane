@@ -103,7 +103,8 @@ pub async fn health(request: Request, context: RouteContext<()>) -> worker::Resu
             "signing_ready": config.signing_private_key.is_some(),
             "payments_ready": providers(&config).into_iter().any(|provider| provider.configured),
             "email_ready": context.env.send_email("EMAIL").is_ok()
-                && config.auth_from_email.is_some(),
+                && config.auth_from_email.is_some()
+                && (!config.is_production() || config.rerout_api_key.is_some()),
         }))
     })();
     finish(result, &id)

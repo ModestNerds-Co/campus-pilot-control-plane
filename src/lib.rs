@@ -14,6 +14,7 @@ mod licensing;
 mod operations;
 mod payments;
 mod routes;
+mod short_links;
 mod store;
 
 use worker::{Context, Env, Request, Response, Result, Router, event};
