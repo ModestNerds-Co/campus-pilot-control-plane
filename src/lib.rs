@@ -65,6 +65,10 @@ async fn fetch(request: Request, env: Env, _context: Context) -> Result<Response
         .get_async("/api/owner/overview", routes::owner_overview_view)
         .get_async("/api/owner/accounts", routes::owner_accounts_view)
         .post_async("/api/owner/accounts", routes::owner_create_account)
+        .post_async(
+            "/api/owner/accounts/:accountId/administrators",
+            routes::owner_grant_customer_administrator,
+        )
         .get_async("/api/owner/plans", routes::owner_plans_view)
         .patch_async("/api/owner/plans/:planId", routes::owner_update_plan)
         .post_async("/api/owner/plan-prices", routes::owner_create_plan_price)

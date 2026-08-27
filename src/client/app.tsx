@@ -19,6 +19,7 @@ import {
   Server,
   Settings2,
   ShieldCheck,
+  UserPlus,
   Users,
 } from "lucide-react";
 import {
@@ -112,6 +113,14 @@ interface OwnerAccount extends PortalAccount {
   slug: string;
   plan_name: string | null;
   installation_count: number;
+  created_at: string;
+}
+
+interface AccountMember {
+  id: string;
+  account_id: string;
+  email: string;
+  role: "admin" | "billing" | "viewer";
   created_at: string;
 }
 
@@ -1137,7 +1146,7 @@ function OwnerPageView({ email, page }: { email: string; page: OwnerPage }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [drawer, setDrawer] = useState<
-    "account" | "plan" | "price" | "subscription" | "revoke" | null
+    "account" | "access" | "plan" | "price" | "subscription" | "revoke" | null
   >(null);
   const [selected, setSelected] = useState<any>(null);
   const [pending, setPending] = useState(false);
@@ -1214,6 +1223,10 @@ function OwnerPageView({ email, page }: { email: string; page: OwnerPage }) {
             setSelected(account);
             setDrawer("subscription");
           },
+          manageAccess: (account) => {
+            setSelected(account);
+            setDrawer("access");
+          },
           revoke: (installation) => {
             setSelected(installation);
             setDrawer("revoke");
@@ -1227,6 +1240,24 @@ function OwnerPageView({ email, page }: { email: string; page: OwnerPage }) {
         onSubmit={async (body) =>
           runMutation(setPending, setError, async () => {
             await post("/api/owner/accounts", body);
+            setDrawer(null);
+            await load();
+          })
+        }
+      />
+      <CustomerAccessDrawer
+        account={selected as OwnerAccount | null}
+        members={((data?.members ?? []) as AccountMember[]).filter(
+          (member) => member.account_id === selected?.id,
+        )}
+        open={drawer === "access"}
+        pending={pending}
+        onClose={() => setDrawer(null)}
+        onSubmit={async (email) =>
+          runMutation(setPending, setError, async () => {
+            await post(`/api/owner/accounts/${selected.id}/administrators`, {
+              email,
+            });
             setDrawer(null);
             await load();
           })
@@ -1297,6 +1328,7 @@ function renderOwnerContent(
     editPlan: (plan: Plan) => void;
     addPrice: (plan: Plan) => void;
     manualSubscription: (account: OwnerAccount) => void;
+    manageAccess: (account: OwnerAccount) => void;
     revoke: (installation: Installation) => void;
   },
 ) {
@@ -1361,13 +1393,22 @@ function renderOwnerContent(
                 <td>{row.installation_count}</td>
                 <td>{formatDate(row.created_at)}</td>
                 <td>
-                  <button
-                    className="table-action"
-                    onClick={() => actions.manualSubscription(row)}
-                    type="button"
-                  >
-                    Grant subscription
-                  </button>
+                  <div className="table-actions">
+                    <button
+                      className="table-action"
+                      onClick={() => actions.manageAccess(row)}
+                      type="button"
+                    >
+                      Customer access
+                    </button>
+                    <button
+                      className="table-action"
+                      onClick={() => actions.manualSubscription(row)}
+                      type="button"
+                    >
+                      Grant subscription
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1739,6 +1780,96 @@ function AccountDrawer({
             value={memberEmail}
           />
         </label>
+      </div>
+    </Drawer>
+  );
+}
+
+function CustomerAccessDrawer({
+  account,
+  members,
+  open,
+  pending,
+  onClose,
+  onSubmit,
+}: {
+  account: OwnerAccount | null;
+  members: AccountMember[];
+  open: boolean;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (email: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+  useEffect(() => {
+    if (open) setEmail("");
+  }, [open, account?.id]);
+  const normalizedEmail = email.trim().toLowerCase();
+  const alreadyAdministrator = members.some(
+    (member) =>
+      member.role === "admin" && member.email.toLowerCase() === normalizedEmail,
+  );
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={`Customer access${account ? ` · ${account.name}` : ""}`}
+      description="Customer administrators sign in through the separate customer portal. Owner access is not reused."
+      footer={
+        <>
+          <button className="button ghost" onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button
+            className="button primary"
+            disabled={pending || !normalizedEmail || alreadyAdministrator}
+            onClick={() => onSubmit(normalizedEmail)}
+            type="button"
+          >
+            <UserPlus />
+            {pending ? "Granting…" : "Grant access"}
+          </button>
+        </>
+      }
+    >
+      <div className="form-stack">
+        <section>
+          <p className="eyebrow">Current members</p>
+          {members.length ? (
+            <ul className="member-list">
+              {members.map((member) => (
+                <li key={member.id}>
+                  <div>
+                    <strong>{member.email}</strong>
+                    <small>Added {formatDate(member.created_at)}</small>
+                  </div>
+                  <Status value={member.role} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="help">No customer members are assigned.</p>
+          )}
+        </section>
+        <label>
+          Customer administrator email
+          <input
+            autoComplete="off"
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="administrator@school.example"
+            type="email"
+            value={email}
+          />
+        </label>
+        {alreadyAdministrator ? (
+          <p className="help" role="status">
+            This email already has customer administrator access.
+          </p>
+        ) : (
+          <p className="help">
+            The recipient must request and use an emailed customer sign-in link before opening installations or creating an activation code.
+          </p>
+        )}
       </div>
     </Drawer>
   );

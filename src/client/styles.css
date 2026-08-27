@@ -102,6 +102,7 @@ td small { max-width: 280px; margin-top: 3px; overflow: hidden; color: var(--sub
 .table-action { display: inline-flex; align-items: center; gap: 6px; border: 0; cursor: pointer; color: var(--blue); background: none; font-weight: 600; font-size: 12px; text-decoration: none; white-space: nowrap; }
 .table-action svg { width: 15px; height: 15px; }
 .table-action.danger { color: var(--danger); }
+.table-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 14px; }
 
 .empty { display: grid; place-items: center; min-height: 330px; padding: 50px 24px; text-align: center; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .empty > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px; color: var(--blue); background: var(--blue-soft); }
@@ -154,6 +155,11 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 .field-preview { color: var(--muted); font-size: 11px; font-weight: 500; }
 .optional { color: var(--muted); font-weight: 500; }
 .form-error { margin: 0; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--border)); border-radius: 7px; color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); font-size: 12px; line-height: 1.5; }
+.member-list { display: grid; gap: 0; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--border); list-style: none; }
+.member-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--border); }
+.member-list strong, .member-list small { display: block; overflow-wrap: anywhere; }
+.member-list strong { font-size: 13px; }
+.member-list small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .code-result { display: grid; gap: 18px; }
 .code-result p { margin: 0; color: var(--muted); }
 .code-result code { display: block; overflow-wrap: anywhere; padding: 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--navy); background: var(--surface-subtle); font-size: 13px; line-height: 1.6; }

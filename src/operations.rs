@@ -49,6 +49,55 @@ pub struct CreatedAccount {
     pub slug: String,
 }
 
+/// A validated owner-assisted grant of customer administrator access.
+///
+/// This does not create an owner session or a customer session. The recipient
+/// must still prove control of the email address through customer sign-in.
+#[derive(Debug)]
+pub(crate) struct GrantCustomerAdministratorInput {
+    account_id: String,
+    email: CanonicalEmail,
+}
+
+impl GrantCustomerAdministratorInput {
+    pub(crate) fn parse(account_id: &str, email: &str) -> Result<Self, ApiError> {
+        let account_id = Uuid::parse_str(account_id)
+            .map_err(|_| invalid("account_id", "Expected a valid customer identifier"))?
+            .to_string();
+        Ok(Self {
+            account_id,
+            email: CanonicalEmail::parse(email)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CustomerAdministratorGrantOutcome {
+    Created,
+    Promoted,
+    AlreadyAdministrator,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct CustomerAdministratorGrantOutput {
+    member_id: String,
+    email: CanonicalEmail,
+    role: AccountRole,
+    outcome: CustomerAdministratorGrantOutcome,
+}
+
+#[derive(Debug, Deserialize)]
+struct AccountStatusRow {
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AccountMemberRow {
+    id: String,
+    role: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PlanPatch {
     pub name: Option<String>,
@@ -217,7 +266,14 @@ pub async fn owner_accounts(db: &D1Database) -> Result<Value, ApiError> {
         vec![],
     )
     .await?;
-    Ok(json!({ "accounts": accounts }))
+    let members = all::<Value>(
+        db,
+        "SELECT id, account_id, email, role, created_at FROM account_members \
+         WHERE deleted_at IS NULL ORDER BY LOWER(email)",
+        vec![],
+    )
+    .await?;
+    Ok(json!({ "accounts": accounts, "members": members }))
 }
 
 pub async fn create_account(
@@ -276,6 +332,162 @@ pub async fn create_account(
     )
     .await?;
     Ok(CreatedAccount { id, slug })
+}
+
+pub(crate) async fn grant_customer_administrator(
+    db: &D1Database,
+    operator: &OwnerOperator,
+    input: GrantCustomerAdministratorInput,
+    request_id: &str,
+) -> Result<CustomerAdministratorGrantOutput, ApiError> {
+    let account = first::<AccountStatusRow>(
+        db,
+        "SELECT status FROM accounts WHERE id = ? AND deleted_at IS NULL",
+        vec![bind_text(&input.account_id)],
+    )
+    .await?
+    .ok_or_else(|| ApiError::client("account_not_found", "Customer not found", 404))?;
+    if account.status == "closed" {
+        return Err(ApiError::client(
+            "account_closed",
+            "Customer access cannot be changed for a closed account",
+            409,
+        ));
+    }
+
+    if let Some(existing) = active_account_member(db, &input).await? {
+        return ensure_customer_administrator(db, operator, &input, existing, request_id).await;
+    }
+
+    let member_id = Uuid::new_v4().to_string();
+    let timestamp = now_iso()?;
+    let inserted = execute(
+        db,
+        "INSERT OR IGNORE INTO account_members \
+         (id, account_id, email, role, created_at, updated_at) \
+         VALUES (?, ?, ?, 'admin', ?, ?)",
+        vec![
+            bind_text(&member_id),
+            bind_text(&input.account_id),
+            bind_text(input.email.as_str()),
+            bind_text(&timestamp),
+            bind_text(&timestamp),
+        ],
+    )
+    .await?;
+    if inserted == 0 {
+        let existing = active_account_member(db, &input)
+            .await?
+            .ok_or(ApiError::Internal)?;
+        return ensure_customer_administrator(db, operator, &input, existing, request_id).await;
+    }
+
+    write_member_grant_audit(db, operator, &input, &member_id, None, request_id).await?;
+    Ok(CustomerAdministratorGrantOutput {
+        member_id,
+        email: input.email,
+        role: AccountRole::Admin,
+        outcome: CustomerAdministratorGrantOutcome::Created,
+    })
+}
+
+async fn active_account_member(
+    db: &D1Database,
+    input: &GrantCustomerAdministratorInput,
+) -> Result<Option<AccountMemberRow>, ApiError> {
+    first::<AccountMemberRow>(
+        db,
+        "SELECT id, role FROM account_members WHERE account_id = ? AND LOWER(email) = ? \
+         AND deleted_at IS NULL LIMIT 1",
+        vec![
+            bind_text(&input.account_id),
+            bind_text(input.email.as_str()),
+        ],
+    )
+    .await
+}
+
+async fn ensure_customer_administrator(
+    db: &D1Database,
+    operator: &OwnerOperator,
+    input: &GrantCustomerAdministratorInput,
+    existing: AccountMemberRow,
+    request_id: &str,
+) -> Result<CustomerAdministratorGrantOutput, ApiError> {
+    if existing.role == "admin" {
+        return Ok(CustomerAdministratorGrantOutput {
+            member_id: existing.id,
+            email: input.email.clone(),
+            role: AccountRole::Admin,
+            outcome: CustomerAdministratorGrantOutcome::AlreadyAdministrator,
+        });
+    }
+    if !matches!(existing.role.as_str(), "billing" | "viewer") {
+        return Err(ApiError::Internal);
+    }
+    let updated = execute(
+        db,
+        "UPDATE account_members SET role = 'admin', updated_at = ? \
+         WHERE id = ? AND account_id = ? AND deleted_at IS NULL",
+        vec![
+            bind_text(&now_iso()?),
+            bind_text(&existing.id),
+            bind_text(&input.account_id),
+        ],
+    )
+    .await?;
+    if updated != 1 {
+        return Err(ApiError::Internal);
+    }
+    write_member_grant_audit(
+        db,
+        operator,
+        input,
+        &existing.id,
+        Some(existing.role.as_str()),
+        request_id,
+    )
+    .await?;
+    Ok(CustomerAdministratorGrantOutput {
+        member_id: existing.id,
+        email: input.email.clone(),
+        role: AccountRole::Admin,
+        outcome: CustomerAdministratorGrantOutcome::Promoted,
+    })
+}
+
+async fn write_member_grant_audit(
+    db: &D1Database,
+    operator: &OwnerOperator,
+    input: &GrantCustomerAdministratorInput,
+    member_id: &str,
+    previous_role: Option<&str>,
+    request_id: &str,
+) -> Result<(), ApiError> {
+    let action = if previous_role.is_some() {
+        "account_member.administrator_promoted"
+    } else {
+        "account_member.administrator_added"
+    };
+    write(
+        db,
+        &AuditEvent {
+            actor: AuditActor::Owner,
+            actor_id: Some(operator.email().as_str()),
+            account_id: Some(&input.account_id),
+            action,
+            target_type: "account_member",
+            target_id: Some(member_id),
+            request_id: Some(request_id),
+            reason: None,
+            metadata: &json!({
+                "email": input.email.as_str(),
+                "previous_role": previous_role,
+                "role": "admin"
+            }),
+        },
+    )
+    .await
 }
 
 pub async fn owner_plans(db: &D1Database) -> Result<Value, ApiError> {
@@ -687,7 +899,7 @@ fn invalid(field: &'static str, detail: &'static str) -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use super::{PlanPatch, slugify, validate_plan_patch};
+    use super::{GrantCustomerAdministratorInput, PlanPatch, slugify, validate_plan_patch};
 
     fn empty_patch() -> PlanPatch {
         PlanPatch {
@@ -719,5 +931,19 @@ mod tests {
         patch.status = Some("active".to_owned());
         patch.trial_days = Some(366);
         assert!(validate_plan_patch(&patch).is_err());
+    }
+
+    #[test]
+    fn customer_administrator_grant_parses_identity_once() {
+        let account_id = "6f8c5f04-1aa2-4a43-93f6-9f9cd622d09a";
+        let input =
+            GrantCustomerAdministratorInput::parse(account_id, "  ADMINISTRATOR@School.Example ")
+                .unwrap_or_else(|_| unreachable!());
+        assert_eq!(input.account_id, account_id);
+        assert_eq!(input.email.as_str(), "administrator@school.example");
+        assert!(
+            GrantCustomerAdministratorInput::parse("not-an-account", "person@example.com").is_err()
+        );
+        assert!(GrantCustomerAdministratorInput::parse(account_id, "not-an-email").is_err());
     }
 }

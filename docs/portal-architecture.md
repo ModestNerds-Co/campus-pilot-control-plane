@@ -16,6 +16,7 @@ Campus Pilot licensing has two separate browser applications backed by one contr
 - Canonical host: configured by `OWNER_APP_URL`.
 - Public route: `/owner/login` for allowlisted owner email addresses.
 - Authenticated routes: `/owner/*` for customers, plans, provider configuration, payments, installations, leases, and vendor audit.
+- An owner may grant a named email customer-administrator membership for assisted onboarding. This is audited, creates no customer session, and never lets the owner impersonate that customer; the recipient must still prove email control through customer sign-in.
 - Owner authentication uses its own magic links, session table, cookie, and CSRF boundary.
 - Customer sessions cannot authorize owner endpoints, even when the same email address exists in both identity stores.
 
@@ -36,4 +37,4 @@ Campus Pilot licensing has two separate browser applications backed by one contr
 4. The customer enters `/portal` in an explicit setup state until a plan and installation are configured.
 5. Duplicate, expired, or consumed links return to `/login` with an operational recovery message.
 
-Owner-created customer accounts remain supported for assisted onboarding, but they do not replace public customer signup.
+Owner-created customer accounts and audited administrator grants remain supported for assisted onboarding, but they do not replace public customer signup or customer email verification at sign-in.

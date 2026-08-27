@@ -15,6 +15,7 @@ These rules apply to this repository.
 ## Portals and UI
 
 - Keep the customer portal and owner portal visibly and authoritatively separate.
+- Owner-assisted onboarding may grant an email customer membership, but must never mint a customer session, impersonate the customer, or issue an activation code from owner authority; the recipient proves email control through customer sign-in.
 - Read `docs/portal-architecture.md` before changing portal hosts, signup, login, sessions, cookies, or owner/customer routing.
 - Use concise operational copy. Do not expose signing, fingerprint, schema, or migration implementation details to customers.
 - Forms, confirmations, and secondary workflows use accessible right-side drawers, never centered modals.

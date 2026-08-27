@@ -10,6 +10,8 @@ Vendor-operated licensing and billing for Campus Pilot. This is a separate deplo
 
 Customer and owner identities, cookies, sessions, routes, and UI shells are separate. See [`docs/portal-architecture.md`](docs/portal-architecture.md).
 
+For assisted onboarding, an owner can grant customer-administrator access to a named email from **Customers → Customer access**. The grant is audited and does not create a session or merge owner/customer authority; the recipient still signs in through the customer portal's emailed link before managing installations or activation codes.
+
 The canonical signed lease schema is [`contract/license-lease-v1.schema.json`](contract/license-lease-v1.schema.json).
 Provider and currency boundaries are defined in [`docs/payment-architecture.md`](docs/payment-architecture.md).
 

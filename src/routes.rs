@@ -22,10 +22,10 @@ use crate::licensing::{
     public_keys,
 };
 use crate::operations::{
-    CreateAccountInput, CreatePlanPriceInput, PlanPatch, create_account, create_activation_code,
-    create_manual_subscription, create_plan_price, owner_accounts, owner_audit,
-    owner_installations, owner_leases, owner_overview, owner_plans, revoke_installation,
-    update_plan,
+    CreateAccountInput, CreatePlanPriceInput, GrantCustomerAdministratorInput, PlanPatch,
+    create_account, create_activation_code, create_manual_subscription, create_plan_price,
+    grant_customer_administrator, owner_accounts, owner_audit, owner_installations, owner_leases,
+    owner_overview, owner_plans, revoke_installation, update_plan,
 };
 use crate::payments::{
     CheckoutRequest, create_billing_portal, create_checkout, owner_payment_activity,
@@ -92,6 +92,11 @@ struct CreateAccountBody {
     name: String,
     billing_email: String,
     member_email: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrantCustomerAdministratorBody {
+    email: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -657,6 +662,27 @@ pub async fn owner_create_account(
         let body = json_body::<CreateAccountBody>(&mut request).await?;
         let input = CreateAccountInput::parse(&body.name, &body.billing_email, &body.member_email)?;
         json_status(&create_account(&db, &operator, input, &id).await?, 201)
+    }
+    .await;
+    finish(result, &id)
+}
+
+pub async fn owner_grant_customer_administrator(
+    mut request: Request,
+    context: RouteContext<()>,
+) -> worker::Result<Response> {
+    let id = request_id(&request);
+    let result = async {
+        let config = Config::from_env(&context.env)?;
+        assert_same_origin(&request, &config.owner_app_url, &config)?;
+        let db = context.d1("DB")?;
+        let operator = require_owner(&db, &request, &config).await?;
+        let account_id = context
+            .param("accountId")
+            .ok_or_else(|| ApiError::client("account_not_found", "Customer not found", 404))?;
+        let body = json_body::<GrantCustomerAdministratorBody>(&mut request).await?;
+        let input = GrantCustomerAdministratorInput::parse(account_id, &body.email)?;
+        json_response(&grant_customer_administrator(&db, &operator, input, &id).await?)
     }
     .await;
     finish(result, &id)
