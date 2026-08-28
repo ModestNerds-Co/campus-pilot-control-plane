@@ -856,6 +856,7 @@ fn validate_plan_patch(patch: &PlanPatch) -> Result<(), ApiError> {
 fn validate_module_dependencies(modules: &[String]) -> Result<(), ApiError> {
     let modules = modules.iter().map(String::as_str).collect::<BTreeSet<_>>();
     for (module, dependency) in [
+        ("sis", "academics"),
         ("academics", "hr_payroll"),
         ("fleet", "hr_payroll"),
         ("timetabling", "academics"),
@@ -978,6 +979,16 @@ mod tests {
 
         patch.modules = Some(vec!["academics".to_owned(), "hr_payroll".to_owned()]);
         assert!(validate_plan_patch(&patch).is_ok());
+
+        patch.modules = Some(vec![
+            "sis".to_owned(),
+            "academics".to_owned(),
+            "hr_payroll".to_owned(),
+        ]);
+        assert!(validate_plan_patch(&patch).is_ok());
+
+        patch.modules = Some(vec!["sis".to_owned(), "hr_payroll".to_owned()]);
+        assert!(validate_plan_patch(&patch).is_err());
 
         patch.modules = Some(vec!["timetabling".to_owned(), "academics".to_owned()]);
         assert!(validate_plan_patch(&patch).is_err());
