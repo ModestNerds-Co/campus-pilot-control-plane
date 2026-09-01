@@ -21,7 +21,7 @@ use crate::store::{batch, bind_i64, bind_text, execute, first, prepared};
 ///
 /// This must match a version explicitly supported by the Campus Pilot runtime;
 /// it is deliberately independent of commercial plan keys.
-pub const PRODUCT_CATALOG_VERSION: &str = "campus-pilot/5";
+pub const PRODUCT_CATALOG_VERSION: &str = "campus-pilot/6";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstallationRow {
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn issued_leases_use_the_code_owned_product_catalog() {
-        assert_eq!(PRODUCT_CATALOG_VERSION, "campus-pilot/5");
+        assert_eq!(PRODUCT_CATALOG_VERSION, "campus-pilot/6");
         assert!(!PRODUCT_CATALOG_VERSION.contains("plans/"));
     }
 
