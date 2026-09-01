@@ -865,6 +865,8 @@ fn validate_module_dependencies(modules: &[String]) -> Result<(), ApiError> {
         ("learning", "hr_payroll"),
         ("learning", "sis"),
         ("student_support", "sis"),
+        ("transport", "fleet"),
+        ("transport", "sis"),
         ("fleet", "hr_payroll"),
         ("timetabling", "academics"),
     ] {
@@ -1036,6 +1038,18 @@ mod tests {
         assert!(validate_plan_patch(&patch).is_err());
 
         patch.modules = Some(vec!["student_support".to_owned(), "sis".to_owned()]);
+        assert!(validate_plan_patch(&patch).is_ok());
+
+        patch.modules = Some(vec!["transport".to_owned(), "fleet".to_owned()]);
+        assert!(validate_plan_patch(&patch).is_err());
+
+        patch.modules = Some(vec![
+            "transport".to_owned(),
+            "fleet".to_owned(),
+            "sis".to_owned(),
+            "academics".to_owned(),
+            "hr_payroll".to_owned(),
+        ]);
         assert!(validate_plan_patch(&patch).is_ok());
     }
 
